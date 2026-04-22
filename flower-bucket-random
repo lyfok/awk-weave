@@ -1,0 +1,36 @@
+Set the Terraform version and specify the required providers (random and AWS).
+Configure the AWS provider to use the region you are using for the course.
+Create a Random ID for the AWS S3 bucket name.
+Create an AWS S3 bucket.
+Create an output block for the bucket name.
+#################AWS & Random provider########
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+##############Configure the AWS provider to use the region###########
+provider "aws" {
+  region = "ap-south-1"
+}
+######################Create a Random ID for the AWS S3 bucket name#######
+resource "random_id" "any-id" {
+    byte_length = 6
+  
+}
+resource "aws_s3_bucket" "own-bucket" {
+    bucket="my-happy-bucket-${random_id.any-id.hex}"
+  
+}
+############Create an output block for the bucket name#########
+output "below_is_the_bucket_detail" {
+  value = aws_s3_bucket.own-bucket.bucket
+}
+############END of task##########
