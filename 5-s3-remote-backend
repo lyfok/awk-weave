@@ -1,0 +1,51 @@
+1)Set up your S3 bucket. Choose a unique name for it, 
+2)Configure the S3 backend in your Terraform configuration. This is done in the backend "s3" block in your configuration file. Replace the <your-bucket-name> text with the name of the bucket you have manually created, and the <your-aws-region> with the respective region you are using for the course.
+3)Configure the AWS provider by using the provider "aws" block, and make sure it uses the correct region for your projects.
+4)Finally, run terraform init again. This will initialize your backend. You should see a message that Terraform has been successfully initialized and that the backend "s3" has been configured.
+######In aws console,manually created s3 bucket name#####
+
+flower-bucket-27
+
+
+#######s3-resourse-creation####
+resource "random_id" "any-id" {
+  byte_length = 6
+
+}
+resource "aws_s3_bucket" "own-bucket" {
+  bucket = "my-happy-bucket-${random_id.any-id.hex}"
+
+}
+########provider-region#####
+provider "aws" {
+  region = "ap-south-1" #aws resource creation location
+}
+#####s3-backend-info####
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  
+  }
+  backend "s3" {
+    bucket  = "flower-bucket-27"
+    key     = "ownstatefile.tfstate" #custom name of my tfstate file
+    region  = "ap-south-1" #Bucket location
+
+    }
+}
+######Display-s3-bucket-name####
+
+output "below_is_the_bucket_detail" {
+  value = aws_s3_bucket.own-bucket.bucket
+}
+
+
+
+
