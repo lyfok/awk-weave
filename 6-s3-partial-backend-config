@@ -1,0 +1,240 @@
+# Terraform Remote Backend Setup (S3) with Partial Configuration
+
+## 📌 What I tried to achieve
+
+In this exercise, I wanted to move Terraform state from local to a remote backend (S3) and understand how partial backend configuration works in real scenarios.
+
+I also wanted to follow a safer workflow using `plan` and `apply` separation.
+
+---
+
+## 🧠 Why remote backend?
+
+By default, Terraform stores state locally (`terraform.tfstate`). This is fine for testing, but not practical in real environments.
+
+Problems with local state:
+
+* Not shareable across team
+* Risk of accidental deletion
+* No locking mechanism
+* Difficult to manage in CI/CD
+
+So I decided to use **S3 as remote backend**.
+
+---
+
+## ⚙️ Backend Configuration Approach
+
+Instead of hardcoding backend values in `.tf` files, I used **partial backend configuration**.
+
+### Terraform block
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+
+  backend "s3" {}
+}
+```
+
+👉 I intentionally kept backend empty.
+
+---
+
+### Backend config file (`dev.s3.tfbackend`)
+
+```hcl
+bucket  = "new-bucket-supply-26"
+key     = "dev-ownstatefile.tfstate"
+region  = "ap-south-1"
+```
+
+### Why I did this:
+
+* Keeps code reusable
+* Different environments can use different backend files
+* Avoids hardcoding values
+
+---
+
+## 🏗️ Resources Created
+
+```hcl
+resource "random_id" "any-id" {
+  byte_length = 6
+}
+
+resource "aws_s3_bucket" "own-bucket" {
+  bucket = "my-happy-bucket-${random_id.any-id.hex}"
+}
+```
+
+### Thought process:
+
+* S3 bucket names must be globally unique
+* So I used `random_id` to avoid conflicts
+* This is useful when testing multiple times
+
+---
+
+## 🚀 Steps I executed
+
+---
+
+### Step 1: Initialize backend
+
+```bash
+terraform init -backend-config="dev.s3.tfbackend"
+```
+
+What I observed:
+
+* Terraform picked backend config from file
+* Initialized S3 backend successfully
+
+---
+
+### Step 2: Migrate state
+
+```bash
+terraform init -backend-config="dev.s3.tfbackend" -migrate-state
+```
+
+Why I used this:
+
+* I already had local state
+* Needed to move it to S3
+
+Observation:
+
+* Local state got migrated to S3
+* Backend is now fully remote
+
+---
+
+### Step 3: Generate execution plan
+
+```bash
+terraform plan -out=dev_own
+```
+
+Why:
+
+* I wanted to save the plan instead of directly applying
+* This ensures consistency
+
+Observation:
+
+* Plan file (`dev_own`) created
+* Contains exact execution steps
+
+---
+
+### Step 4: Apply saved plan
+
+```bash
+terraform apply dev_own
+```
+
+What happened:
+
+* Terraform applied exactly what was in plan
+* Created:
+
+  * random ID
+  * S3 bucket
+
+---
+
+## 🔄 Overall Flow
+
+```
+Write Terraform code
+        ↓
+Initialize backend (S3)
+        ↓
+Migrate state (local → remote)
+        ↓
+Generate plan (saved)
+        ↓
+Apply exact plan
+```
+
+---
+
+## ⚠️ Issues I faced & learnings
+
+### 1. Bucket region mismatch
+
+* If backend region ≠ actual bucket region → error (301 / 404)
+* Fix: Always verify bucket region
+
+---
+
+### 2. Bucket is not auto-created
+
+* Terraform backend does NOT create S3 bucket
+* Must be created manually beforehand
+
+---
+
+### 3. S3 confusion (important)
+
+* S3 is global → bucket visible everywhere
+* But actually stored in one region
+
+---
+
+### 4. State migration behavior
+
+* `-migrate-state` moves state
+* It does NOT create new state files
+
+---
+
+### 5. Plan vs Apply gap
+
+Without `-out`:
+
+* Plan and apply can differ
+
+With `-out`:
+
+* Exact execution is guaranteed
+
+---
+
+## 💡 Key takeaways
+
+* Remote backend is mandatory for team setups
+* Partial backend config is cleaner and flexible
+* Always control state carefully
+* Use `plan -out` in real environments
+* Never assume bucket region
+
+---
+
+## 🚀 What I can improve next
+
+* Add DynamoDB for state locking
+* Enable versioning on S3 bucket
+* Separate environments (dev/prod)
+* Integrate with CI/CD pipeline
+
+---
+
+## 📌 Final thought
+
+This exercise helped me understand that Terraform is not just about writing `.tf` files —
+it's more about **state management, consistency, and safe deployments**.
+
+---
