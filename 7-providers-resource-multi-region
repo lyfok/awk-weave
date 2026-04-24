@@ -1,0 +1,131 @@
+configure aws s3 bucket in two different regions
+one bukctet in ap-south-1 and another bucket in us-east-1
+# 🌍 Terraform: Creating S3 Buckets in Multiple AWS Regions
+
+## 📌 Objective
+
+In this setup, I wanted to understand how to:
+
+* Use **multiple AWS providers** in Terraform
+* Create resources in **different regions**
+* Use **randomization** to avoid bucket name conflicts
+* Work with **provider aliasing**
+
+---
+
+##  Provider Configuration
+
+I configured two AWS providers:
+
+```hcl
+provider "aws" {
+  region = "ap-south-1" # Default provider (Mumbai region)
+}
+
+provider "aws" {
+  region = "us-east-1" # Secondary provider (N. Virginia)
+  alias  = "us-Bhabani"
+}
+```
+
+### 💡 What’s happening here?
+
+* The first provider is the **default** (Mumbai region)
+* The second provider uses an **alias (`us-Bhabani`)**
+* This allows me to explicitly choose which region to use for specific resources
+
+---
+
+##  Random ID for Unique Bucket Names
+
+```hcl
+resource "random_id" "any-id" {
+  byte_length = 6
+}
+```
+
+### Why I used this:
+
+S3 bucket names must be **globally unique**, so instead of hardcoding names, I appended a random hex value.
+
+---
+
+##  S3 Bucket in ap-south-1 (Default Provider)
+
+```hcl
+resource "aws_s3_bucket" "own-bucket" {
+  bucket = "my-happy-bucket-${random_id.any-id.hex}"
+}
+```
+
+### Key Points:
+
+* Uses **default provider** → automatically goes to `ap-south-1`
+* Bucket name is dynamically generated
+
+---
+
+## 🌎 S3 Bucket in us-east-1 (Aliased Provider)
+
+```hcl
+resource "aws_s3_bucket" "east-1-bucket" {
+  bucket   = "my-us-east-1-${random_id.any-id.hex}"
+  provider = aws.us-Bhabani
+}
+```
+
+### Key Points:
+
+* Explicitly uses the **aliased provider**
+* Ensures this bucket is created in **us-east-1**
+* Same random suffix used for uniqueness
+
+---
+
+## 📤 Outputs
+
+```hcl
+output "below_is_the_bucket_detail" {
+  value = aws_s3_bucket.own-bucket.bucket
+}
+
+output "east-1-bucket-details" {
+  value = aws_s3_bucket.east-1-bucket
+}
+```
+
+### What I’m doing here:
+
+* Outputting the **bucket name** for the default region
+* Outputting **full resource details** for the us-east-1 bucket
+
+---
+
+## 🧠 Key Learnings
+
+* Terraform supports **multiple providers** using aliases
+* Resource placement across regions is controlled via:
+
+  ```
+  provider = aws.<alias>
+  ```
+* S3 bucket naming must be **globally unique**, so using `random_id` is practical
+* Outputs help in quickly verifying created resources
+
+---
+
+## 🚀 Final Thoughts
+
+This was a simple but powerful exercise to understand:
+
+* Multi-region deployments
+* Provider aliasing
+* Dynamic resource naming
+
+This pattern can be extended further for:
+
+* Multi-region architectures
+* Disaster recovery setups
+* Cross-region replication
+
+---
