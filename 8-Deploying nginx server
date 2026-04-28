@@ -1,0 +1,268 @@
+# 🌐 AWS VPC + NGINX Deployment using Terraform (Hands-on Project)
+
+## 📌 What I Built
+
+In this project, I provisioned AWS infrastructure from scratch using Terraform and deployed an NGINX web server.
+
+Instead of using pre-built modules, I manually defined each resource to understand how AWS networking works internally.
+
+---
+
+## 🧠 Key Learning Focus
+
+* How VPC networking works (CIDR, subnetting)
+* How public internet access is enabled (IGW + Route Table)
+* How Terraform manages dependencies automatically
+* How security groups control traffic
+* How EC2 is provisioned using Terraform
+
+---
+
+## 🏗️ Step-by-Step Implementation (Based on My Code)
+
+---
+
+## 🔹 1. Provider & Backend Configuration
+
+```hcl
+provider "aws" {
+  region = "ap-south-1"
+}
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+  }
+
+  backend "s3" {
+    bucket = "new-bucket-supply-26"
+    key    = "master-ownstatefile.tfstate"
+    region = "ap-south-1"
+  }
+}
+```
+
+### ✅ What I did here:
+
+* Configured AWS provider in **Mumbai region**
+* Used **S3 backend for remote state management**
+* This ensures:
+
+  * State is not lost
+  * Can be used in team environments
+
+---
+
+## 🔹 2. Common Tagging Strategy
+
+```hcl
+locals {
+  common_tags = {
+    app = "Nginx"
+  }
+}
+```
+
+### ✅ Why:
+
+* Avoid repeating tags everywhere
+* Use `merge()` later for consistency
+
+---
+
+## 🔹 3. VPC Creation
+
+```hcl
+resource "aws_vpc" "own_vpc" {
+  cidr_block = "10.0.0.0/16"
+
+  tags = merge(local.common_tags, {
+    Name = "own_terra_vpc"
+  })
+}
+```
+
+### ✅ What I did:
+
+* Created a custom VPC with CIDR `/16`
+* Used `merge()` to combine common + custom tags
+
+---
+
+## 🔹 4. Public Subnet
+
+```hcl
+resource "aws_subnet" "own_public_subnet" {
+  vpc_id     = aws_vpc.own_vpc.id
+  cidr_block = "10.0.2.0/24"
+}
+```
+
+### ✅ Key Concept:
+
+* Subnet is inside VPC
+* `/24` gives smaller network inside `/16`
+
+---
+
+## 🔹 5. Internet Gateway (IGW)
+
+```hcl
+resource "aws_internet_gateway" "own_igw" {
+  vpc_id = aws_vpc.own_vpc.id
+}
+```
+
+### ✅ Why:
+
+* Without IGW → no internet access
+
+---
+
+## 🔹 6. Route Table + Internet Access
+
+```hcl
+resource "aws_route_table" "own_route" {
+  vpc_id = aws_vpc.own_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.own_igw.id
+  }
+}
+```
+
+```hcl
+resource "aws_route_table_association" "own-route-association" {
+  route_table_id = aws_route_table.own_route.id
+  subnet_id      = aws_subnet.own_public_subnet.id
+}
+```
+
+### ✅ What I did:
+
+* Routed all traffic (`0.0.0.0/0`) to IGW
+* Attached route table to subnet
+
+👉 This is what makes it a **PUBLIC subnet**
+
+---
+
+## 🔹 7. Security Group (Controlled Access)
+
+```hcl
+resource "aws_security_group" "own_sg" {
+  name   = "own_security"
+  vpc_id = aws_vpc.own_vpc.id
+}
+```
+
+```hcl
+resource "aws_vpc_security_group_ingress_rule" "own_ingress_one" {
+  security_group_id = aws_security_group.own_sg.id
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+```
+
+```hcl
+resource "aws_vpc_security_group_ingress_rule" "own_ingress_two" {
+  security_group_id = aws_security_group.own_sg.id
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+```
+
+### ✅ What I did:
+
+* Allowed only:
+
+  * HTTP (80)
+  * HTTPS (443)
+
+👉 No SSH open → more secure setup
+
+---
+
+## 🔹 8. EC2 Instance (NGINX Deployment)
+
+```hcl
+resource "aws_instance" "own_nginx" {
+  ami                         = "ami-0f7189f6b4e861c9b"
+  instance_type               = "t3.micro"
+  subnet_id                   = aws_subnet.own_public_subnet.id
+  vpc_security_group_ids      = [aws_security_group.own_sg.id]
+  associate_public_ip_address = true
+
+  tags = {
+    Name = "own_terra_insta_nginx"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+```
+
+### ✅ What I did:
+
+* Used **Bitnami NGINX AMI**
+* Enabled public IP
+* Attached security group
+
+### 🔥 Important:
+
+```hcl
+create_before_destroy = true
+```
+
+👉 Prevents downtime during updates
+
+---
+
+## 🌍 Final Outcome
+
+* EC2 instance deployed successfully
+* NGINX running
+* Accessible via:
+
+```bash
+http://<public-ip>
+```
+
+---
+
+## 🧹 Cleanup
+
+```bash
+terraform destroy
+```
+
+👉 Ensures no unnecessary AWS charges
+
+---
+
+## ⚠️ Important Observations
+
+* Public subnet works only because:
+
+  * IGW attached
+  * Route table configured
+
+* Terraform automatically handled dependencies:
+
+  * VPC → Subnet → IGW → Route → EC2
+
+---
+
+## 👨‍💻 Author
+
+Bhabani Shankar Satapathy
+DevOps Engineer | AWS | Terraform
