@@ -1,0 +1,358 @@
+# 🚀 AWS S3 Static Website Hosting using Terraform
+
+## 📌 Project Description
+
+This project demonstrates how to host a static website on AWS S3 using Terraform.
+
+The workflow includes:
+
+* Creating an S3 bucket
+* Configuring public access
+* Applying a bucket policy
+* Enabling static website hosting
+* Uploading HTML files using Terraform
+* Outputting the website endpoint
+
+---
+
+## 🧠 Objective
+
+To understand how to:
+
+* Use Terraform to provision AWS resources
+* Configure S3 for static website hosting
+* Automate file uploads using Terraform
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+User → S3 Static Website Endpoint → S3 Bucket → HTML Files
+```
+
+---
+
+## 📂 Project Structure
+
+```
+.
+├── main.tf
+├── provider.tf
+├── build/
+│   ├── index.html
+│   └── error.html
+```
+
+---
+
+### 🔹 Provider Configuration
+
+```hcl
+provider "aws" {
+  region = "ap-south-1" #aws resource creation location
+}
+```
+
+---
+
+### 🔹 Required Providers
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+```
+
+---
+
+### 🔹 Random Integer for Unique Bucket Name
+
+```hcl
+resource "random_integer" "own_random_int" {
+  min = 1
+  max = 5000
+}
+```
+
+👉 Used to generate a unique S3 bucket name.
+
+---
+
+### 🔹 S3 Bucket Creation
+
+```hcl
+resource "aws_s3_bucket" "own_s3_static_website" {
+  bucket = "own-terra-static-site-${random_integer.own_random_int.result}"
+}
+```
+
+---
+
+### 🔹 Public Access Block Configuration
+
+```hcl
+resource "aws_s3_bucket_public_access_block" "own_static_site_block" {
+  bucket                  = aws_s3_bucket.own_s3_static_website.id
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+```
+
+👉 Allows public access for static website hosting.
+
+---
+
+### 🔹 Bucket Policy
+
+```hcl
+resource "aws_s3_bucket_policy" "own_static_site_policy" {
+  bucket = aws_s3_bucket.own_s3_static_website.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.own_s3_static_website.arn}/*"
+      }
+    ]
+  })
+}
+```
+
+👉 Grants public read access to all objects.
+
+---
+
+### 🔹 Static Website Configuration
+
+```hcl
+resource "aws_s3_bucket_website_configuration" "own_static_site_conf" {
+  bucket = aws_s3_bucket.own_s3_static_website.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "error.html"
+  }
+}
+```
+
+---
+
+### 🔹 Upload HTML Files via Terraform
+
+```hcl
+resource "aws_s3_object" "own_object_index" {
+  bucket       = aws_s3_bucket.own_s3_static_website.id
+  key          = "index.html"
+  source       = "build/index.html"
+  content_type = "text/html"
+}
+
+resource "aws_s3_object" "own_object_error" {
+  bucket       = aws_s3_bucket.own_s3_static_website.id
+  key          = "error.html"
+  source       = "build/error.html"
+  content_type = "text/html"
+}
+```
+
+---
+
+### 🔹 Output
+
+```hcl
+output "use_the_below_website_endpoint" {
+  value = aws_s3_bucket_website_configuration.own_static_site_conf.website_endpoint
+}
+```
+
+👉 Displays the S3 website URL after deployment.
+
+---
+
+## 🌐 HTML Files (As Used)
+
+### index.html
+
+* Displays a welcome message
+* Contains basic structure (header, content, footer)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{Climate control page}}</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        header {
+            background: #333;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+        }
+        main {
+            padding: 20px;
+        }
+        footer {
+            background: #222;
+            color: #aaa;
+            text-align: center;
+            padding: 10px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>{{Welcome Bhabani}}</h1>
+</header>
+
+<main>
+    <h2>{{Summer season}}</h2>
+    <p>{{heat wave alert has been issued.Stay hydrated and stay safe}}</p>
+
+    <button>{{Sun}}</button>
+</main>
+
+<footer>
+    <p>{{2026}}</p>
+</footer>
+
+</body>
+</html>
+
+### error.html
+
+* Displays a fallback message for invalid routes
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{Error page}}</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        header {
+            background: #333;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+        }
+        main {
+            padding: 20px;
+        }
+        footer {
+            background: #222;
+            color: #aaa;
+            text-align: center;
+            padding: 10px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>{{Welcome anonymous user}}</h1>
+</header>
+
+<main>
+    <h2>{{wrong season}}</h2>
+    <p>{{I am unsure of the seson}}</p>
+
+    <button>{{black hole}}</button>
+</main>
+
+<footer>
+    <p>{{2026}}</p>
+</footer>
+
+</body>
+</html>
+
+---
+
+## 🔄 Execution Steps
+
+```bash
+terraform init
+terraform plan
+terraform apply
+```
+
+After deployment:
+
+* Copy the output URL
+* Open it in your browser
+
+---
+
+## 🧹 Cleanup
+
+```bash
+terraform destroy
+```
+
+---
+
+## ⚠️ Important Notes
+
+* Bucket name is dynamically generated using a random integer
+* Public access is intentionally enabled for website hosting
+* Files are uploaded from the `build/` directory
+
+---
+
+## 🧩 Key Learning
+
+* Transition from manual S3 upload to Terraform automation
+* Understanding separation of:
+
+  * Public access block
+  * Bucket policy
+  * Website configuration
+
+---
+
+## 👨‍💻 Author
+
+**Bhabani Shankar Satapathy**
+DevOps Engineer (AWS | Terraform | Kubernetes)
