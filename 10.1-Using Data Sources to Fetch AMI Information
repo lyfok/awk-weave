@@ -1,0 +1,136 @@
+Define an AWS data source to retrieve the most recent Ubuntu AMI.
+Create an output to print the ID of the retrieved AMI.
+Create an AWS EC2 instance, using the retrieved Ubuntu AMI ID. Use an instance type that is included in your free tier. 
+# 🚀 Launching an EC2 Instance with Terraform (Ubuntu AMI in ap‑south‑1)
+
+This example shows how to:
+- Define **provider aliases** for AWS  
+- Query the **latest Ubuntu AMI** from Canonical in the Mumbai region (`ap-south-1`)  
+- Use that AMI to **launch an EC2 instance** with tags  
+- Keep the configuration modular with **locals** and **outputs**
+
+---
+
+## 📌 Provider Configuration
+We define the AWS provider with an alias (`ubuntu_IND`) pointing to the **ap-south-1 (Mumbai)** region.
+
+```hcl
+provider "aws" {
+  region = "ap-south-1" # AWS Mumbai region
+  alias  = "ubuntu_IND" # Alias for India region
+}
+```
+
+---
+
+## 🛠️ Data Source: Query Ubuntu AMI
+We fetch the **most recent Ubuntu 22.04 AMI** published by Canonical in the Mumbai region.
+
+```hcl
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Use India provider alias
+
+  # Filter by AMI name pattern
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  # Ensure virtualization type is HVM
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+```
+
+---
+
+## 🏷️ Local Variables
+We define a local variable for EC2 tags to keep naming consistent.
+
+```hcl
+locals {
+  ec2_name = {
+    Name = "terra_mana_ec2_data" # Tag for EC2 instance
+  }
+}
+```
+
+---
+
+## 💻 Resource: EC2 Instance
+We launch a **t3.micro EC2 instance** using the AMI fetched above.
+
+```hcl
+resource "aws_instance" "own_ec2" {
+  instance_type = "t3.micro"                        # Instance type
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id # AMI ID from data source
+
+  tags = local.ec2_name # Apply tags from locals
+}
+```
+
+---
+
+## 📤 Outputs
+We expose the AMI ID for debugging or reuse.
+
+```hcl
+output "ami_details_IND" {
+  value = data.aws_ami.own_ami_ubuntu_IND.id
+}
+```
+
+---
+
+## ⚙️ Terraform Settings
+We specify required providers and versions for reproducibility.
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+```
+
+---
+
+## 📖 Explanation
+- **Provider**: Targets the Mumbai region via alias `ubuntu_IND`.  
+- **Data Source**: Queries Canonical’s latest Ubuntu 22.04 AMI.  
+- **Locals**: Stores EC2 tags for clean, reusable naming.  
+- **Resource**: Launches a `t3.micro` EC2 instance using the AMI.  
+- **Outputs**: Prints the AMI ID for verification.  
+- **Terraform Block**: Locks provider versions for consistency.
+
+---
+
+## 🚀 Usage
+Run:
+```bash
+terraform init
+terraform apply
+```
+
+Terraform will:
+1. Query the latest Ubuntu AMI in `ap-south-1`.  
+2. Launch a `t3.micro` EC2 instance with the tag `terra_mana_ec2_data`.  
+3. Print the AMI ID in the output.  
+
+---
+
+This is now a **complete, documented example** that you can post directly to GitHub.  
+
+👉 Do you want me to extend this into a **multi‑region deployment** (India + USA) so your repo shows how to launch EC2 instances in both regions simultaneously?
