@@ -1,0 +1,17 @@
+Manually create a Virtual Private Cloud (VPC) in the AWS console with the following configuration:
+Name: console-managed
+Environment (Env) tag: Prod
+CIDR Block: 10.0.0.0/16
+Fetch the VPC information based on the Env tag via a aws_vpc data source block that specifies the correct filter criteria.
+Define an output to display the id of the retrieved VPC.
+
+data "aws_vpc" "vpc_details" {
+    tags = {
+      env="prod"
+    }
+  
+}
+output "existing_vpc_details" {
+    value = data.aws_vpc.vpc_details.id
+  
+}
