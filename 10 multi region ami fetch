@@ -1,0 +1,113 @@
+In Terraform, you want to fetch the latest Ubuntu AMI from Canonical in two different AWS regions (USA and India). You have defined provider aliases for each region.
+
+Write the Terraform configuration using data "aws_ami" blocks to query the most recent Ubuntu 22.04 AMI in both regions. Explain why provider aliases are required in this scenario.
+ 🌍 Multi‑Region AMI Lookup in Terraform
+
+This example demonstrates how to query the latest Ubuntu AMI from Canonical in two different AWS regions (US East and Asia Pacific South) using provider aliases.  
+It also shows how to output the AMI IDs for use in resource creation.
+
+---
+
+## 📌 Why Provider Aliases?
+Terraform requires provider aliases when you want to interact with multiple regions/accounts simultaneously.  
+Here, we define two AWS providers:
+- `ubuntu_USA` → `us-east-1` (N. Virginia)  
+- `ubuntu_IND` → `ap-south-1` (Mumbai)  
+
+This allows us to query AMIs separately in each region.
+
+---
+
+## 🛠️ Full Terraform Code
+
+```hcl
+#############################################
+# Provider Configuration
+# Define AWS providers with aliases for regions
+#############################################
+
+provider "aws" {
+  region = "ap-south-1"   # AWS Mumbai region
+  alias  = "ubuntu_IND"   # Alias for India region
+}
+
+provider "aws" {
+  region = "us-east-1"    # AWS N. Virginia region
+  alias  = "ubuntu_USA"   # Alias for USA region
+}
+
+#############################################
+# Data Sources: Query Ubuntu AMIs
+# Fetch the most recent Ubuntu 22.04 AMI
+#############################################
+
+# Query AMI in USA region
+data "aws_ami" "own_ami_ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_USA   # Use USA provider alias
+
+  # Filter by AMI name pattern
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  # Ensure virtualization type is HVM
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# Query AMI in India region
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Use India provider alias
+
+  # Filter by AMI name pattern
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  # Ensure virtualization type is HVM
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+#############################################
+# Outputs: Display AMI IDs
+# Useful for debugging or referencing in resources
+#############################################
+
+output "ami_details_USA" {
+  value = data.aws_ami.own_ami_ubuntu.id
+}
+
+output "ami_details_IND" {
+  value = data.aws_ami.own_ami_ubuntu_IND.id
+}
+```
+
+---
+
+## 📖 Explanation
+- **Providers**: Two providers are declared with aliases (`ubuntu_USA`, `ubuntu_IND`) to target different regions.  
+- **Data Sources**: Each `aws_ami` block queries the latest Ubuntu 22.04 AMI in its respective region.  
+- **Filters**: The filters ensure we only fetch AMIs matching Canonical’s naming convention and virtualization type.  
+- **Outputs**: The AMI IDs are exposed so they can be referenced when creating EC2 instances.
+
+---
+
+## 🚀 Usage
+Run:
+```bash
+terraform init
+terraform apply
+```
+
+You’ll see the AMI IDs for both regions printed in the output. These IDs can then be used to launch EC2 instances in **multi‑region deployments**.
