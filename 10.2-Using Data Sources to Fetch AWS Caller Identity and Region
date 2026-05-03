@@ -1,0 +1,71 @@
+AWS Caller Identity Data Source: This data source should be defined to return the identity of the caller.
+AWS Region Data Source: This data source should be defined to get the current AWS region.
+AWS Caller Identity Output: This output should return the identity of the caller.
+AWS Region Output: This output should return the current AWS region.
+# 🔐 AWS Identity & Region Lookup with Terraform
+
+This example demonstrates how to use Terraform **data sources** to:
+- Retrieve the **AWS caller identity** (account details of the user running Terraform).  
+- Fetch the **current AWS region** being used.  
+- Output these values for debugging, auditing, or reference in other resources.
+
+---
+
+## 📌 Data Sources
+
+### 1. AWS Caller Identity
+The `aws_caller_identity` data source returns details about the IAM identity making the Terraform calls.
+
+```hcl
+data "aws_caller_identity" "own_caller" {
+  # No arguments required
+}
+```
+
+### 2. AWS Region
+The `aws_region` data source returns details about the region configured in the provider.
+
+```hcl
+data "aws_region" "own_region" {
+  # No arguments required
+}
+```
+
+---
+
+## 📤 Outputs
+
+We expose the values from the data sources for visibility.
+
+```hcl
+# Output the user_id of the caller
+output "identity_of_the_caller_user" {
+  value = data.aws_caller_identity.own_caller.user_id
+}
+
+# Output the full caller identity object (includes account_id, arn, user_id)
+output "identity_of_the_caller" {
+  value = data.aws_caller_identity.own_caller
+}
+
+# Output the current AWS region details
+output "own_AWS_region" {
+  value = data.aws_region.own_region
+}
+```
+
+---
+
+## 📖 Explanation
+- **`aws_caller_identity`**: Useful for confirming which IAM user/role is executing Terraform.  
+- **`aws_region`**: Helps verify the region being used, especially in multi‑region setups.  
+- **Outputs**: Printing these values makes debugging easier and ensures you’re working in the expected account and region.
+
+---
+
+## 🚀 Usage
+Run:
+```bash
+terraform init
+terraform apply
+```
