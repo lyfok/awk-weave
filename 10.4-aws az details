@@ -1,0 +1,40 @@
+# AWS Availability Zones – Terraform Example
+
+This Terraform configuration demonstrates how to query AWS availability zones and expose useful details through outputs. It’s a simple but powerful way to understand the regions and zones available in your AWS account.
+
+## 📌 Code
+
+```hcl
+# Fetch all available availability zones in the current region
+data "aws_availability_zones" "own_azs_list" {
+  state = "available"
+}
+
+# Output the region details
+output "regions_details" {
+  value = data.aws_availability_zones.own_azs_list.region
+}
+
+# Output the availability zone IDs
+output "az_details" {
+  value = data.aws_availability_zones.own_azs_list.id
+}
+
+# Output the availability zone names
+output "az_names" {
+  value = data.aws_availability_zones.own_azs_list.names
+}
+```
+
+---
+
+##  Explanation
+
+- `data "aws_availability_zones"`  
+  Queries AWS for the list of availability zones in the current region.  
+  - `state = "available"` ensures only zones that are currently usable are returned.
+
+- **Outputs**  
+  - `regions_details` → Displays the AWS region where the zones are located.  
+  - `az_details` → Shows the unique IDs of the availability zones.  
+  - `az_names` → Lists the human-readable names of the zones (e.g., `ap-south-1a`, `ap-south-1b`).
