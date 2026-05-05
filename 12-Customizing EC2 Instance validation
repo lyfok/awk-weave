@@ -1,0 +1,91 @@
+## 📄 GitHub README.md
+
+### Implementation Logic
+
+1.  **Validation**: We enforce a strict schema on `insta_type`. If a user attempts to provision an expensive instance class, Terraform will catch the violation during the `plan` phase, before any provider API calls are made.
+2.  **Filtering**: The AMI data source uses specific filters for `virtualization-type` and `name` patterns to guarantee architecture compatibility (HVM-SSD).
+
+### Quick Start
+```bash
+terraform init
+terraform plan -var="insta_type=t3.micro" -var="user_defind=prod-web-serve"
+terraform apply -auto-approve
+```
+
+```hcl
+# =============================================================================
+# TERRAFORM CONFIGURATION & PROVIDERS
+# =============================================================================
+terraform {
+  required_version = ">= 1.7.0" # Ensuring compatibility with modern lifecycle features
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.41.0" # Using pessimistic constraint to allow patch updates
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+provider "aws" {
+  region = "ap-south-1" # Targeted deployment in Mumbai region
+}
+
+# =============================================================================
+# DATA SOURCES: AMI LOOKUP
+# =============================================================================
+# Fetching the most recent Ubuntu 22.04 AMI from Canonical.
+# This prevents the "Hardcoded AMI ID" anti-pattern which fails across regions.
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical Official
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# =============================================================================
+# RESOURCES: COMPUTE
+# =============================================================================
+resource "aws_instance" "own_ec2" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.insta_type
+
+  # Applying standardized tagging for resource tracking and billing
+  tags = {
+    Name       = var.user_defind
+    ManagedBy  = "Terraform"
+    CreatedBy  = "Infrastructure-Team"
+  }
+}
+
+# =============================================================================
+# VARIABLES & VALIDATION
+# =============================================================================
+variable "insta_type" {
+  type        = string
+  description = "The instance SKU (e.g., t3.micro). Only burstable t-series allowed for cost control."
+
+  validation {
+    # Guardrail: Prevent the creation of expensive resources accidentally
+    condition = var.insta_type=="t3.micro" || var.insta_type=="t2.micro"
+    #condition     = contains(["t2.micro", "t3.micro"], var.insta_type)
+    error_message = "Deployment failed: Instance type must be either t2.micro or t3.micro to comply with cost-optimization policies."
+  }
+}
+
+variable "user_defind" {
+  type        = string
+  description = "Name tag for the EC2 resource. Required for identifying ownership in the AWS Console."
+}
