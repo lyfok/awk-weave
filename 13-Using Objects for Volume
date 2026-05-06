@@ -1,0 +1,64 @@
+Terraform EC2 Instance with Root Volume Configuration
+
+This repository demonstrates how to launch an **AWS EC2 instance** using Terraform, while configuring the root block device (volume size and type) dynamically through a single object variable.
+
+---
+
+## 📂 Files
+
+### `variables.tf`
+```hcl
+# Define a single object variable to hold EC2 instance details
+variable "insta_details" {
+  type = object({
+    vol_siz    = number   # Root volume size in GB
+    vol_typ    = string   # Root volume type (e.g., gp3, gp2, io1)
+    insta_deta = string   # EC2 instance type (e.g., t3.micro, t2.small)
+  })
+
+  # Default values (can be overridden at runtime)
+  default = {
+    vol_siz   = 10        # Default root volume size
+    vol_typ   = "gp3"     # Default root volume type
+    insta_deta = "t3.micro" # Default EC2 instance type
+  }
+}
+```
+
+---
+
+### `data.tf`
+```hcl
+# Find the latest Ubuntu 22.04 AMI published by Canonical
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+```
+
+---
+
+### `res.tf`
+```hcl
+# Create an EC2 instance using the AMI and variable configuration
+resource "aws_instance" "compute" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.insta_details.insta_deta  # Instance type from variable
+
+  root_block_device {
+    delete_on_termination = true
+    volume_size           = var.insta_details.vol_siz  # Volume size from variable
+    volume_type           = var.insta_details.vol_typ  # Volume type from variable
+  }
+}
+
