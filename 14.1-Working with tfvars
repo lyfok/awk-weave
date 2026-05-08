@@ -1,0 +1,250 @@
+# Terraform EC2 Deployment using terraform.tfvars Override
+
+This activity demonstrates how to create an AWS EC2 instance using Terraform while keeping the infrastructure configuration flexible through the use of variables and a `terraform.tfvars` file.
+
+The main objective of this activity is to understand:
+
+* How Terraform object variables work
+* How `terraform.tfvars` overrides default variable values
+* How to dynamically fetch the latest Ubuntu AMI
+* How Terraform variables help in making infrastructure reusable and maintainable
+
+---
+
+# Provider Configuration
+
+File: `provider.tf`
+
+```hcl id="dca4pm"
+provider "aws" {
+  region = "ap-south-1" #aws resource creation location
+  alias  = "ubuntu_IND"
+}
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+```
+
+## Explanation
+
+This configuration tells Terraform:
+
+* which cloud provider to use
+* which AWS region to deploy resources into
+* which provider versions should be used
+
+The AWS region selected here is:
+
+* `ap-south-1` (Mumbai Region)
+
+The provider alias `ubuntu_IND` is defined to demonstrate provider aliasing concepts, which become useful while working with multiple AWS accounts or multiple regions.
+
+The `required_providers` block ensures version consistency and prevents unexpected behavior caused by provider version upgrades.
+
+---
+
+# Data Source Configuration
+
+File: `data.tf`
+
+```hcl id="gbbqys"
+# Find the latest Ubuntu 22.04 AMI published by Canonical
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+```
+
+## Explanation
+
+Instead of hardcoding an AMI ID, this activity dynamically fetches the latest Ubuntu 22.04 AMI from AWS.
+
+This approach is preferred because:
+
+* AMI IDs change across regions
+* newer AMIs are released regularly
+* hardcoded AMIs may become outdated
+
+The `most_recent = true` parameter ensures Terraform always selects the latest matching AMI.
+
+The owner ID:
+
+* `099720109477`
+
+belongs to Canonical, which is the official publisher of Ubuntu AMIs on AWS.
+
+The filters ensure:
+
+* Ubuntu 22.04
+* SSD-backed storage
+* AMD64 architecture
+* HVM virtualization type
+
+---
+
+# Variable Configuration
+
+File: `variables.tf`
+
+```hcl id="1sbf5z"
+# Define a single object variable to hold EC2 instance details
+variable "insta_details" {
+  type = object({
+    vol_siz    = number # Root volume size in GB
+    vol_typ    = string # Root volume type (e.g., gp3, gp2, io1)
+    insta_deta = string # EC2 instance type (e.g., t3.micro, t2.small)
+  })
+
+  # Default values (can be overridden at runtime)
+  default = {
+    vol_siz    = 10         # Default root volume size
+    vol_typ    = "gp3"      # Default root volume type
+    insta_deta = "t3.micro" # Default EC2 instance type
+  }
+}
+
+variable "extra_tags" {
+  type = map(string)
+  default = {
+    #"app" = "Terraform"
+  }
+
+}
+```
+
+## Explanation
+
+This activity uses an object variable named `insta_details` to group EC2-related configurations together.
+
+Instead of creating multiple individual variables like:
+
+* volume size
+* volume type
+* instance type
+
+all values are grouped into a single object variable for better readability and maintainability.
+
+The object contains:
+
+* `vol_siz`
+* `vol_typ`
+* `insta_deta`
+
+Default values are also provided, which Terraform uses when no override values are supplied.
+
+Another variable named `extra_tags` is declared using `map(string)` datatype. This variable can be used to dynamically pass custom tags to resources.
+
+---
+
+# terraform.tfvars Configuration
+
+File: `terraform.tfvars`
+
+```hcl
+insta_details = {
+  vol_siz    = 10
+  vol_typ    = "gp2"
+  insta_deta = "t3.small"
+}
+extra_tags = {
+  Name = "Own-terra-tfvars"
+}
+```
+
+## Explanation
+
+The `terraform.tfvars` file is used to override the default values defined in `variables.tf`.
+
+This allows infrastructure behavior to be changed without modifying the actual Terraform code.
+
+For example:
+
+Default values in `variables.tf`:
+
+* `gp3`
+* `t3.micro`
+
+Overridden values in `terraform.tfvars`:
+
+* `gp2`
+* `t3.small`
+
+Terraform automatically prioritizes values from `terraform.tfvars` over default values.
+
+This is useful in real-world environments because:
+
+* infrastructure becomes reusable
+* environment-specific configurations remain separate
+* code changes are minimized
+
+---
+
+# EC2 Resource Configuration
+
+File: `main.tf`
+
+```hcl 
+# Create an EC2 instance using the AMI and variable configuration
+resource "aws_instance" "compute" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.insta_details.insta_deta # Instance type from variable
+
+  root_block_device {
+    delete_on_termination = true
+    volume_size           = var.insta_details.vol_siz # Volume size from variable
+    volume_type           = var.insta_details.vol_typ # Volume type from variable
+  }
+  tags = {
+
+  }
+}
+```
+
+## Explanation
+
+This resource creates an EC2 instance using:
+
+* dynamically fetched Ubuntu AMI
+* values supplied through Terraform variables
+
+The AMI is referenced from the data source:
+
+```hcl 
+data.aws_ami.own_ami_ubuntu_IND.id
+```
+
+The instance type and root volume settings are dynamically fetched from the `insta_details` object variable.
+
+The `root_block_device` block configures:
+
+* root EBS volume size
+* root EBS volume type
+
+The parameter:
+
+```hcl 
+delete_on_termination = true
+```
+
+ensures that the EBS root volume is automatically deleted when the EC2 instance is terminated, helping avoid unnecessary storage costs.
