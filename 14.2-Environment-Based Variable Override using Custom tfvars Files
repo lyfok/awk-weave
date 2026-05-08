@@ -1,0 +1,217 @@
+In this activity, I extended the Terraform variable override concept by creating separate variable files for different environments.
+
+Instead of using only:
+
+* `terraform.tfvars`
+
+I created:
+
+* `prod.terraform.tfvars`
+* `dev.terraform.tfvars`
+
+This approach helps in managing environment-specific infrastructure configurations without modifying the actual Terraform code.
+
+The main objective of this activity is to:
+
+* maintain reusable Terraform code
+* separate production and development configurations
+* dynamically choose infrastructure settings during runtime
+
+---
+
+# Why Separate tfvars Files?
+
+Different environments usually require different infrastructure configurations.
+
+For example:
+
+| Environment | Expected Requirement                     |
+| ----------- | ---------------------------------------- |
+| Development | Smaller resources and lower cost         |
+| Production  | Larger storage and stable infrastructure |
+
+Instead of modifying `variables.tf` every time, separate tfvars files can be used for each environment.
+
+This improves:
+
+* maintainability
+* reusability
+* environment isolation
+* deployment flexibility
+
+---
+
+# Production Variable Configuration
+
+File: `prod.terraform.tfvars`
+
+```hcl id="8e9kho"
+insta_details = {
+  vol_siz    = 60
+  vol_typ    = "sc1"
+  insta_deta = "t3.micro"
+}
+extra_tags = {
+  Name = "Own-terra-tfvars"
+}
+```
+
+## Explanation
+
+This configuration represents the Production environment.
+
+### Production-Specific Configuration
+
+| Parameter     | Value    |
+| ------------- | -------- |
+| Volume Size   | 60 GB    |
+| Volume Type   | sc1      |
+| Instance Type | t3.micro |
+
+The larger root volume size is configured for production usage where higher storage capacity may be required.
+
+The `sc1` volume type is used here for low-cost cold HDD storage.
+
+---
+
+# Development Variable Configuration
+
+File: `dev.terraform.tfvars`
+
+```hcl id="rgf8r4"
+insta_details = {
+  vol_siz    = 40
+  vol_typ    = "gp2"
+  insta_deta = "t3.small"
+}
+extra_tags = {
+  Name = "Own-terra-tfvars"
+}
+```
+
+## Explanation
+
+This configuration represents the Development environment.
+
+### Development-Specific Configuration
+
+| Parameter     | Value    |
+| ------------- | -------- |
+| Volume Size   | 40 GB    |
+| Volume Type   | gp2      |
+| Instance Type | t3.small |
+
+The Development environment uses:
+
+* smaller storage compared to production
+* general-purpose SSD (`gp2`) volume type
+* slightly larger instance type for testing and development workloads
+
+---
+
+# How Terraform Uses Custom tfvars Files
+
+Terraform automatically loads:
+
+* `terraform.tfvars`
+
+However, custom tfvars files like:
+
+* `prod.terraform.tfvars`
+* `dev.terraform.tfvars`
+
+must be explicitly passed during execution.
+
+---
+
+# Production Deployment Command
+
+```bash "
+terraform plan -var-file="prod.terraform.tfvars"
+```
+
+## What Happens Here?
+
+Terraform:
+
+* reads default values from `variables.tf`
+* overrides them using values from `prod.terraform.tfvars`
+* generates execution plan for Production configuration
+
+---
+
+# Development Deployment Command
+
+```bash
+terraform plan -var-file="dev.terraform.tfvars"
+```
+
+## What Happens Here?
+
+Terraform:
+
+* reads default values from `variables.tf`
+* overrides them using values from `dev.terraform.tfvars`
+* generates execution plan for Development configuration
+
+---
+
+# Important Understanding
+
+Priority order of Terraform variable loading:
+
+| Priority | Source                           |
+| -------- | -------------------------------- |
+| Highest  | `-var` command line              |
+| Higher   | `-var-file`                      |
+| Lower    | `terraform.tfvars`               |
+| Lowest   | `default` values in variables.tf |
+
+This means:
+
+* values passed using `-var-file`
+  override
+* values inside `terraform.tfvars`
+
+---
+
+# Benefits of this Approach
+
+This structure is commonly used in real-world Terraform projects because it allows:
+
+* environment-based deployments
+* reusable infrastructure code
+* easier configuration management
+* cleaner Terraform projects
+* reduced chances of accidental configuration changes
+
+---
+
+# Real-World Use Case
+
+Using separate tfvars files is very common while managing:
+
+* Development environments
+* QA environments
+* Staging environments
+* Production environments
+
+The same Terraform codebase can deploy completely different infrastructure just by changing the tfvars file passed during execution.
+
+---
+
+# Example Workflow
+
+## Deploy Development Infrastructure
+
+```bash id="h9wn0k"
+terraform apply -var-file="dev.terraform.tfvars"
+```
+
+---
+
+## Deploy Production Infrastructure
+
+```bash id="gr4dyt"
+terraform apply -var-file="prod.terraform.tfvars"
+```
