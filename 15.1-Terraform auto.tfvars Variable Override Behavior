@@ -1,0 +1,231 @@
+In this activity, I explored how Terraform automatically loads variable files ending with:
+
+```text 
+.auto.tfvars
+```
+
+and how these files override values from:
+
+* `terraform.tfvars`
+* other lower-priority variable sources
+
+The main objective of this activity was to understand:
+
+* Terraform variable precedence
+* automatic variable loading behavior
+* variable-level overriding concept
+
+One important observation during this activity was:
+
+> Terraform does not override configuration at the entire file level.
+> The overriding happens at the individual variable level.
+
+This means Terraform evaluates variables one by one and replaces only the matching variable values based on precedence order.
+
+---
+
+# Created File
+
+File: `prod.auto.tfvars`
+
+```hcl id="yr3r1w"
+insta_details = {
+  vol_siz    = 60
+  vol_typ    = "sc1"
+  insta_deta = "t3.micro"
+}
+extra_tags = {
+  Name = "Own-terra-auto-tfvars"
+}
+```
+
+---
+
+# Why `.auto.tfvars` is Important
+
+Terraform automatically loads:
+
+* `terraform.tfvars`
+* `*.auto.tfvars`
+
+without explicitly passing them from the command line.
+
+So unlike:
+
+```bash
+terraform plan -var-file="prod.terraform.tfvars"
+```
+
+the following file gets loaded automatically:
+
+```text
+prod.auto.tfvars
+```
+
+This is useful when:
+
+* default environment configuration should load automatically
+* manual `-var-file` passing should be avoided
+* environment automation is required
+
+---
+
+# Variable Override Behavior
+
+Suppose the following value already exists in:
+
+File: `dev.terraform.tfvars`
+
+```hcl id="ndmjlwm"
+insta_details = {
+  vol_siz    = 40
+  vol_typ    = "gp2"
+  insta_deta = "t3.small"
+}
+
+extra_tags = {
+  Name = "Own-terra-tfvars"
+}
+```
+
+Now Terraform additionally loads:
+
+```text
+prod.auto.tfvars
+```
+
+which contains:
+
+```hcl id="3tmjlwm"
+insta_details = {
+  vol_siz    = 60
+  vol_typ    = "sc1"
+  insta_deta = "t3.micro"
+}
+
+extra_tags = {
+  Name = "Own-terra-auto-tfvars"
+}
+```
+
+Terraform will finally use:
+
+```hcl id="5ihnly"
+insta_details = {
+  vol_siz    = 60
+  vol_typ    = "sc1"
+  insta_deta = "t3.micro"
+}
+
+extra_tags = {
+  Name = "Own-terra-auto-tfvars"
+}
+```
+
+because values from:
+
+* `prod.auto.tfvars`
+
+have higher precedence than:
+
+* `terraform.tfvars`
+
+---
+
+# Important Learning
+
+The override happens:
+
+* variable by variable
+* not file by file
+
+This is a very important Terraform behavior.
+
+Terraform does not think like:
+
+> "Replace the entire dev file with prod file"
+
+Instead, Terraform evaluates:
+
+* `insta_details`
+* `extra_tags`
+
+individually.
+
+Whichever variable gets the higher-priority value replaces the lower-priority value.
+
+---
+
+# Example of Partial Override Concept
+
+Suppose:
+
+File: `terraform.tfvars`
+
+```hcl
+insta_details = {
+  vol_siz    = 20
+  vol_typ    = "gp2"
+  insta_deta = "t3.small"
+}
+
+extra_tags = {
+  Name = "Dev"
+}
+```
+
+and `prod.auto.tfvars` contains only:
+
+```hcl
+extra_tags = {
+  Name = "Production"
+}
+```
+
+Then:
+
+* `extra_tags` gets overridden
+* `insta_details` still comes from `terraform.tfvars`
+
+This proves:
+
+* overriding occurs at variable level
+* not entire file replacement level
+
+---
+
+# Terraform Variable Loading Priority
+
+Terraform generally follows this order:
+
+| Priority | Source                           |
+| -------- | -------------------------------- |
+| Highest  | `-var` command line              |
+| Higher   | `-var-file`                      |
+| Higher   | `*.auto.tfvars`                  |
+| Lower    | `terraform.tfvars`               |
+| Lowest   | default values in `variables.tf` |
+
+---
+
+# Key Learning Outcomes
+
+This activity helped in understanding:
+
+* Terraform automatic variable loading
+* Purpose of `.auto.tfvars`
+* Terraform variable precedence
+* Difference between file-level and variable-level override
+* Environment-based configuration management
+
+---
+
+# Conclusion
+
+Using `.auto.tfvars` files is a clean and efficient approach for managing automatic environment-specific configurations in Terraform.
+
+The most important takeaway from this activity is:
+
+> Terraform overrides values at the variable level, not at the entire file level.
+
+This behavior provides flexibility and makes Terraform configuration management more predictable and modular in real-world infrastructure deployments.
