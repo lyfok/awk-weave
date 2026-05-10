@@ -1,0 +1,301 @@
+# Terraform Locals, Tagging Strategy, EC2 & S3 Resource Configuration on AWS
+
+In this task, I worked on improving my Terraform code by introducing reusable **locals**, implementing a centralized **tagging strategy**, and deploying AWS resources using cleaner and more maintainable Infrastructure as Code practices.
+
+The main goal of this implementation was:
+
+* Avoid hardcoded values
+* Reuse common configurations
+* Apply standard tags across resources
+* Improve Terraform code readability and scalability
+
+---
+
+# Terraform Configuration
+
+```hcl
+variable "vol_siz" {
+  type    = number
+  default = 30
+
+}
+
+variable "vol_typ" {
+  type    = string
+  default = "gp3"
+
+}
+
+variable "insta_deta" {
+  type    = string
+  default = "t3.micro"
+
+}
+
+variable "additional_tags" {
+  type = map(string)
+
+  default = {
+    app = "state_Highway"
+  }
+
+}
+
+terraform {
+
+  required_providers {
+
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+
+  }
+
+}
+
+# Creating a random integer value
+# Used for generating a unique S3 bucket name
+
+resource "random_integer" "any_integer" {
+
+  min = 100
+  max = 50000
+
+}
+
+# Defining reusable local values
+
+locals {
+
+  project       = "own learning terraform project"
+  project_owner = "DevOps guy"
+  cost_center   = 30
+  managed_by    = "awk"
+
+}
+
+# Creating a common local object
+# This object will be reused across resources for tagging
+
+locals {
+
+  project_details = {
+
+    project       = local.project
+    project_owner = local.project_owner
+    cost_center   = local.cost_center
+    managed_by    = local.managed_by
+
+  }
+
+}
+
+# Creating S3 bucket using random integer
+# Applying common tags using local object
+
+resource "aws_s3_bucket" "own_bucket" {
+
+  bucket = "own-random-bucket-${random_integer.any_integer.id}"
+
+  tags = local.project_details
+
+}
+
+# Create an EC2 instance using the AMI and variable configuration
+
+resource "aws_instance" "compute" {
+
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.insta_deta
+
+  root_block_device {
+
+    delete_on_termination = true
+    volume_size           = var.vol_siz
+    volume_type           = var.vol_typ
+
+  }
+
+  # Merging common project tags
+  # with additional custom tags
+
+  tags = merge(local.project_details, var.additional_tags)
+
+}
+```
+
+---
+
+# What I Implemented
+
+## 1. Terraform Variables
+
+I created variables to make the infrastructure configurable and reusable.
+
+### Variables Used
+
+* `vol_siz` → Root EBS volume size
+* `vol_typ` → Root EBS volume type
+* `insta_deta` → EC2 instance type
+* `additional_tags` → Extra custom tags
+
+### Benefit
+
+Using variables makes the code flexible and avoids hardcoding values.
+
+---
+
+# 2. Terraform Locals
+
+I created reusable local values for:
+
+* Project name
+* Project owner
+* Cost center
+* Managed by
+
+```hcl
+locals {
+
+  project       = "own learning terraform project"
+  project_owner = "DevOps guy"
+  cost_center   = 30
+  managed_by    = "awk"
+
+}
+```
+
+### Why Locals?
+
+Locals help reduce repetition and improve maintainability.
+
+Instead of writing the same values multiple times, I can reuse them throughout the Terraform configuration.
+
+---
+
+# 3. Centralized Tagging Strategy
+
+I created a local object called `project_details`.
+
+```hcl
+locals {
+
+  project_details = {
+
+    project       = local.project
+    project_owner = local.project_owner
+    cost_center   = local.cost_center
+    managed_by    = local.managed_by
+
+  }
+
+}
+```
+
+### Purpose
+
+This local object acts as a centralized common tags map that can be reused across AWS resources.
+
+### Advantage
+
+* Consistent tagging
+* Easier management
+* Cleaner Terraform code
+
+---
+
+# 4. EC2 Instance Refactoring
+
+I refactored the EC2 instance tags section using Terraform `merge()` function.
+
+```hcl
+tags = merge(local.project_details, var.additional_tags)
+```
+
+### What `merge()` Does
+
+The `merge()` function combines:
+
+* Common project tags
+* Additional custom tags
+
+### Final Tags Applied
+
+```hcl
+project       = "own learning terraform project"
+project_owner = "DevOps guy"
+cost_center   = 30
+managed_by    = "awk"
+app           = "state_Highway"
+```
+
+### Benefit
+
+This approach provides:
+
+* Standardized tagging
+* Flexibility for extra tags
+* Better resource organization
+
+---
+
+# 5. S3 Bucket Creation
+
+I created an S3 bucket with:
+
+* Dynamic naming
+* Common project tags
+
+```hcl
+bucket = "own-random-bucket-${random_integer.any_integer.id}"
+```
+
+### Why Random Integer?
+
+S3 bucket names must be globally unique.
+
+To avoid naming conflicts, I used:
+
+```hcl
+resource "random_integer" "any_integer"
+```
+
+---
+
+# Concepts Practiced
+
+## Terraform Locals
+
+Used locals for reusable and centralized configuration values.
+
+---
+
+## Terraform merge() Function
+
+```hcl
+merge(map1, map2)
+```
+
+Used for combining multiple maps into a single tags object.
+
+---
+
+## Dynamic Resource Naming
+
+Used random values for generating unique AWS resource names.
+
+
+# Outcome
+
+By implementing reusable locals and centralized tagging:
+
+* The Terraform configuration became cleaner
+* Resource management became easier
+* Tags became standardized across resources
+* Infrastructure became more scalable and maintainable
