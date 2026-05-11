@@ -101,7 +101,7 @@ locals {
 
 resource "aws_s3_bucket" "own_bucket" {
 
-  bucket = "own-random-bucket-${random_integer.any_integer.id}"
+  bucket = "${local.managed_by}-own-random-bucket-${random_integer.any_integer.id}" #local+custom
 
   tags = local.project_details
 
@@ -125,7 +125,7 @@ resource "aws_instance" "compute" {
   # Merging common project tags
   # with additional custom tags
 
-  tags = merge(local.project_details, var.additional_tags)
+  tags = merge(local.project_details, var.additional_tags,{Name=local.project},{shift="day"}) #local+custom
 
 }
 ```
@@ -197,6 +197,22 @@ locals {
 
 }
 ```
+
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+[
 
 ### Purpose
 
