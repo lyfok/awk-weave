@@ -1,0 +1,68 @@
+# Mastering Terraform `for` Expressions: Transforming Data Collections
+
+In this deep dive, I’m exploring one of the most powerful features in Terraform: the **`for` expression**. 
+
+## The Core Concept: Iterate and Produce
+
+When using a `for` expression, I distinguish between two distinct phases:
+
+1. **The Iteration:** Moving through an existing collection (list, set, map).
+2. **The Production:** Generating a *new* collection.
+
+> [!TIP]
+> The brackets you use determine the output. Use `[]` to produce a **List** and `{}` to produce a **Map**.
+
+---
+
+## 🛠️ My Implementation
+
+I’ve set up a practical example to demonstrate how to transform a simple list of numbers into something more complex using math and filters.
+
+### 1. Variable Definition
+
+First, I ensure the variable is strictly typed so Terraform knows it can iterate over it:
+
+```hcl
+variable "numbers_list" {
+  type = list(number)
+}
+
+```
+
+### 2. The Transformation Logic (`locals.tf`)
+
+I used a `locals` block to handle the heavy lifting. Here, I’m performing two different operations: **Multiplication** and **Filtering**.
+
+```hcl
+locals {
+  # Transformation: Multiplies every element by 3
+  triple_number = [for x in var.numbers_list : x * 3]
+
+  # Filtering: Returns only the numbers that are even
+  even_number   = [for e in var.numbers_list : e if e % 2 == 0]
+}
+
+```
+
+### 3. Exposing the Results
+
+To see these transformations in action after a `terraform plan` or `apply`, I set up these outputs:
+
+```hcl
+output "own_triple_details" {
+  value = local.triple_number
+}
+
+output "own_even_details" {
+  value = local.even_number
+}
+
+```
+
+### Why this matters
+
+In real-world projects, I use this logic to:
+
+* Extract specific IP addresses from a list of network interfaces.
+* Format tags for multiple S3 buckets.
+* Transform a list of user names into a map of IAM policies.
