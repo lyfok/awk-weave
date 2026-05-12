@@ -161,13 +161,13 @@ map_string = {
 ```hcl
 locals {
   # Direct mapping of fruit to its price
-  fruit_price  = { for fru, pri in var.map_number : fru => pri }
+  fruit_price  = { for fru, pri in var.map_number : fru => pri } #curly braces
 
   # Direct mapping of state to its famous place
-  famous_place = { for st, pla in var.map_string : st => pla }
+  famous_place = { for st, pla in var.map_string : st => pla } #curly braces
 
   # Transformation: Doubles the price of each fruit
-  fruit_double = { for cf, cp in var.map_number : cf => cp * 2 }
+  fruit_double = { for cf, cp in var.map_number : cf => cp * 2 } #curly braces
 }
 ```
 
