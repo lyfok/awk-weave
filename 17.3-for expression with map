@@ -45,29 +45,35 @@ output "own_triple_details" {
 output "own_even_details" {
   value = local.even_number
 }
-
 output "maiden_city" {
   value = local.city_name
-}
 
+}
 output "lang_name" {
   value = local.lang_name
 }
-
 output "ful_name" {
   value = local.full_city_lang
 }
-
 output "price_details" {
   value = local.fruit_price
 }
-
 output "famous_details" {
   value = local.famous_place
 }
-
 output "double_details" {
   value = local.fruit_double
+}
+############
+
+output "price_deta_custom" {
+    value=local.fruit_custom
+}
+output "famous_deta_custom" {
+    value=local.famous_custom
+}
+output "double_deta_custom" {
+    value=local.fruit_custom_double
 }
 ```
 
@@ -161,13 +167,22 @@ map_string = {
 ```hcl
 locals {
   # Direct mapping of fruit to its price
-  fruit_price  = { for fru, pri in var.map_number : fru => pri } #curly braces
+  fruit_price = { for fru, pri in var.map_number : fru => pri } #curly braces
 
   # Direct mapping of state to its famous place
   famous_place = { for st, pla in var.map_string : st => pla } #curly braces
 
   # Transformation: Doubles the price of each fruit
   fruit_double = { for cf, cp in var.map_number : cf => cp * 2 } #curly braces
+
+  # Option A: Making the VALUE a full sentence string
+  fruit_custom = { for fru, pri in var.map_number : fru => "Price of ${fru} is ${pri} INR" } #custom
+
+  # Option B: Making the KEY the full sentence
+  famous_custom = { for st, pla in var.map_string : "State ${st} has" => pla }
+
+  # Option C: Math inside the string interpolation
+  fruit_custom_double = { for cf, cp in var.map_number : cf => "Inflation has doubled the price of ${cf} to ${cp * 2}" }
 }
 ```
 
