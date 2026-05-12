@@ -1,0 +1,181 @@
+# Working with `for` Expressions on Maps in Terraform
+
+In this project, I explored how to use Terraform’s `for` expressions with **maps**. Unlike lists, maps allow us to associate string keys with values. By applying `for` loops, I was able to transform values, filter entries, and output results in a clean, declarative way.
+
+---
+
+## 📌 Project Overview
+- **numbers_list** → A list of numbers.  
+- **obj_list** → A list of objects containing `city` and `lang`.  
+- **map_number** → A map with string keys and numeric values.  
+- **map_string** → A map with string keys and string values.  
+- **locals** → Defined transformations and filters using `for` loops.  
+- **outputs** → Displayed the results of these transformations.  
+
+---
+
+## 🛠️ Code Implementation
+
+### locals.tf
+```hcl
+locals {
+  # Transformation: Multiplies every element by 3
+  triple_number = [for x in var.numbers_list : x * 3]
+
+  # Filtering: Returns only the numbers that are even
+  even_number = [for e in var.numbers_list : e if e % 2 == 0]
+
+  # Extracting city names from objects
+  city_name      = [for q in var.obj_list : q.city]
+
+  # Extracting language names from objects
+  lang_name      = [for w in var.obj_list : w.lang]
+
+  # Concatenating city and language into a descriptive string
+  full_city_lang = [for r in var.obj_list : "${r.lang} is spoken by ${r.city}"]
+}
+```
+
+### Outputs
+```hcl
+output "own_triple_details" {
+  value = local.triple_number
+}
+
+output "own_even_details" {
+  value = local.even_number
+}
+
+output "maiden_city" {
+  value = local.city_name
+}
+
+output "lang_name" {
+  value = local.lang_name
+}
+
+output "ful_name" {
+  value = local.full_city_lang
+}
+
+output "price_details" {
+  value = local.fruit_price
+}
+
+output "famous_details" {
+  value = local.famous_place
+}
+
+output "double_details" {
+  value = local.fruit_double
+}
+```
+
+### Provider Configuration
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+```
+
+---
+
+## 📂 Variables
+
+```hcl
+variable "numbers_list" {
+  type = list(number)
+}
+
+variable "obj_list" {
+  type = list(object({
+    city = string
+    lang = string
+  }))
+}
+
+variable "map_number" {
+  type = map(number)
+}
+
+variable "map_string" {
+  type = map(string)
+}
+```
+
+---
+
+## 📄 terraform.tfvars
+
+```hcl
+numbers_list = [10, 2, 3, 4, 64, 6, 8]
+
+obj_list = [
+  {
+    city = "BBS"
+    lang = "OD"
+  },
+  {
+    city = "TS"
+    lang = "TEL"
+  },
+  {
+    city = "PUNJ"
+    lang = "PUNJABI"
+  },
+  {
+    city = "Mani", lang = "Manipuri"
+    city = "Bengal", lang = "Bengali"
+  }
+]
+
+map_number = {
+  Apple      = 12
+  orange     = 22
+  watermelon = 30
+  banana     = 40
+}
+
+map_string = {
+  Od     = "Khandagiri"
+  MP     = "Tiger"
+  Assam  = "Tea"
+  Kerala = "Elephant"
+}
+```
+
+---
+
+## 📄 for_map.tf
+
+```hcl
+locals {
+  # Direct mapping of fruit to its price
+  fruit_price  = { for fru, pri in var.map_number : fru => pri }
+
+  # Direct mapping of state to its famous place
+  famous_place = { for st, pla in var.map_string : st => pla }
+
+  # Transformation: Doubles the price of each fruit
+  fruit_double = { for cf, cp in var.map_number : cf => cp * 2 }
+}
+```
+
+---
+
+## ✅ Key Learnings
+- `map(number)` enforces that all values are numeric, while keys remain strings.  
+- `for` expressions can be used to **transform values** (e.g., doubling fruit prices).  
+- They can also be used to **filter entries** (e.g., selecting only even numbers).  
+- Maps are useful when you want to associate labels (keys) with values, making outputs more descriptive.  
+- Running `terraform plan` helps visualize the transformed outputs clearly.
