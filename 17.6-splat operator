@@ -1,0 +1,77 @@
+After spending time writing out full `for` loops to reorganize my airline data, I wanted to find a more concise way to extract specific attributes. In this lab, I explored **Splat Expressions** (`[*]`), which serve as a shorthand for "plucking" data out of a collection.
+
+## Why I used Splat Expressions
+
+Instead of writing a three-line loop just to get a list of airline names, I found I could do it in one. It acts like a "fast-forward" button for lists: I tell Terraform to look at the whole list and just give me the one property I care about from every entry.
+
+## My Implementation
+
+### 1. The Core Variable
+
+I’m using the same `list_map` variable from my previous transformations. It’s a list of objects containing `airline` and `airline_number`.
+
+```hcl
+variable "list_map" {
+  type = list(object({
+    airline        = string
+    airline_number = number
+  }))
+}
+
+```
+
+### 2. Simplifying the Logic
+
+In my `locals.tf`, I compared the standard loop to the splat syntax. I also had to figure out how to handle maps, since the splat operator only natively supports lists and sets.
+
+```hcl
+locals {
+  # The Standard Way:
+  # I used to write: [for x in var.list_map : x.airline]
+
+  # The Splat Way:
+  # This is much cleaner. It plucks 'airline' from every object in the list.
+  first_names_from_splat = var.list_map[*].airline
+
+  # The Workaround for Maps:
+  # I noticed that local.li_ma[*] throws an error because it's a map.
+  # To fix this, I used the values() function to turn the map into a list first.
+  roles_from_splat_with_values = values(local.li_ma)[*]
+}
+
+```
+
+### 3. Testing the Outputs
+
+I set up these outputs to verify my results in the console.
+
+```hcl
+output "first_names_from_splat" {
+  value = local.first_names_from_splat
+}
+
+output "roles_from_splat_with_values" {
+  # This returns the grouped lists of flight numbers I created earlier
+  value = local.roles_from_splat_with_values
+}
+
+```
+
+---
+
+## Lessons I Learned
+
+### Splat vs. Maps
+
+The biggest issue I hit was trying to use a splat on a map directly. Terraform gave me an `Unsupported attribute` error. I learned that if I want to use this shorthand on a map, I **must** wrap it in `values()` first.
+
+### When I go back to 'for' loops
+
+I realized that while Splat is great for readability, it’s limited.
+
+* If I need to **filter** the data (using an `if` statement), I still need a `for` loop.
+* If I need to **change the key names**, I still need a `for` loop.
+
+## Summary
+
+By using `[*].airline`, I made my code much more concise. This is a pattern I plan to use whenever I'm dealing with resource outputs (like a list of Subnet IDs or Security Group names) where I don't need complex transformation logic—just the data itself.
