@@ -1,0 +1,106 @@
+# Terraform Data Transformation: Lists to Maps
+
+I put this project together to practice complex data transformations in Terraform using `for` loops. Specifically, I wanted to figure out how to take a **list of objects** and reorganize it into different **map** structures—handling both unique keys and potential duplicates.
+
+## The Objective
+
+The goal was to move beyond basic variable usage and implement:
+
+1. **Map Transformation:** Converting a list into a key-value lookup.
+2. **Grouping Logic:** Handling cases where a key (like a username) might appear multiple times.
+3. **Nested Structuring:** Re-mapping data into a specific `{ roles = [...] }` object format.
+
+---
+
+## The Code
+
+### 1. Provider Configuration
+
+Standard setup for the AWS and Random providers.
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+```
+
+### 2. Variable Definitions
+
+I defined `list_map` as a list of objects. This is the "source of truth" that I iterate through in my locals.
+
+```hcl
+variable "list_map" {
+  type = list(object({
+    airline        = string
+    airline_number = number
+  }))
+}
+
+# Example Input Data
+# list_map = [
+#   { airline = "Indigo", airline_number = 22 },
+#   { airline = "America", airline_number = 51 },
+#   { airline = "France", airline_number = 223 },
+#   { airline = "South-Africa", airline_number = 56 }
+# ]
+
+```
+
+### 3. Local Transformations (The Logic)
+
+This is the core of the project. I explored two different ways to use the `for` loop:
+
+* **Option 1:** Creating a custom string value using string interpolation.
+* **Option 2:** Preserving the original object structure while using the list index as the key.
+
+```hcl
+locals {
+  # Option-1: Transforming into a Map where airline name is the key 
+  # and the value is a formatted string.
+  li_ma = { for ud in var.list_map : ud.airline => "udajahaj-${ud.airline_number}" } 
+
+  # Option-2: Transforming the list into a map using the list index (ud) as the key.
+  # This is useful if you need to keep every entry unique even if names overlap.
+  l_m = { for ud, udn in var.list_map : ud => udn } 
+}
+
+```
+
+### 4. Grouping & Advanced Mapping (Conceptual Requirements)
+
+To handle the requirement of **duplicated usernames** and returning a list of roles, I use the grouping syntax `...`:
+
+```hcl
+locals {
+  # Handling duplicates: The '...' groups values into a list for the same key
+  users_map = { for u in var.users : u.username => u.role... }
+
+  # Re-mapping to a specific structure: <key> => { roles = <list> }
+  users_map2 = { for name, roles in local.users_map : name => { roles = roles } }
+}
+
+```
+
+### 5. Outputs
+
+Finally, I defined outputs to verify that the transformations worked as expected during `terraform plan` or `apply`.
+
+```hcl
+output "own_air_deials" {
+  value = local.li_ma
+}
+
+output "own_air_l_m"{
+    value = local.l_m
+}
