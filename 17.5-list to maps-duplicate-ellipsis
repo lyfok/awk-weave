@@ -1,0 +1,86 @@
+I created this project to dive deep into how Terraform handles data transformation. Specifically, I wanted to solve the "Duplicate object key" error that happens when you try to turn a list of objects into a map using a non-unique attribute as the key.
+
+## The Challenge
+
+When you have a list of objects—like a list of airlines—you might want to use the airline name as a key. However, if "France" appears twice in your list, Terraform will normally crash. I used the **ellipsis (`...`)** concept to handle this by grouping duplicate values into lists.
+
+## The Code
+
+### 1. Provider & Variable Setup
+
+I defined a `list_map` variable that accepts a list of objects. In my test case, I intentionally included "France" twice to test the grouping logic.
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+variable "list_map" {
+  type = list(object({
+    airline        = string
+    airline_number = number
+  }))
+}
+
+```
+
+### 2. Implementation Logic (Locals)
+
+In the `locals` block, I experimented with two options:
+
+* **Option 1:** Uses the airline name as the key. By adding `...`, it groups all flight numbers for that airline into a list.
+* **Option 2:** Uses the list index as the key. Even though indexes are unique, adding `...` wraps each object in a list, keeping the data structure consistent.
+
+```hcl
+locals {
+  # Option-1: Grouping by airline name using ellipsis (...)
+  li_ma = { for ud in var.list_map : ud.airline => "udajahaj-${ud.airline_number}"... } 
+  
+  # Option-2: Using the index (ud) as the key, but still applying grouping
+  l_m = { for ud, udn in var.list_map : ud => udn... } 
+}
+
+output "own_air_deials" {
+  value = local.li_ma
+}
+
+output "own_air_l_m"{
+    value = local.l_m
+}
+
+```
+
+---
+
+## Analysis of the Final Output
+
+When I ran this code with my duplicate "France" entries, here is the result I got:
+
+### Key Findings:
+
+1. **Grouped Strings:** In `own_air_deials`, the key `"France"` now contains an array of two strings: `"udajahaj-223"` and `"udajahaj-56"`. This prevents the "Duplicate Key" error.
+2. **Consistent Indexing:** In `own_air_l_m`, even though the keys (0, 1, 2, 3) are unique, every value is wrapped in a list `[ ]`. This is exactly how the ellipsis works—it ensures every key points to a collection, making it predictable for future resource loops.
+
+```text
+own_air_deials = {
+  "America" = ["udajahaj-51"]
+  "France"  = ["udajahaj-223", "udajahaj-56"]
+  "Indigo"  = ["udajahaj-22"]
+}
+
+own_air_l_m = {
+  "0" = [{ airline = "Indigo", airline_number = 22 }]
+  "1" = [{ airline = "America", airline_number = 51 }]
+  "2" = [{ airline = "France", airline_number = 223 }]
+  "3" = [{ airline = "France", airline_number = 56 }]
+}
