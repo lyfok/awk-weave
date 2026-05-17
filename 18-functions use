@@ -1,0 +1,236 @@
+# Terraform Built-in Functions and File Handling
+
+A small hands-on practice project to understand some commonly used Terraform built-in functions like:
+
+* `upper()`
+* `startswith()`
+* `pow()`
+* `merge()`
+* `file()`
+
+Along with working with:
+
+* `locals`
+* `outputs`
+* external YAML files
+
+---
+
+# Terraform Configuration
+
+```hcl
+locals {
+  Name = "National Highway"
+  age  = 50
+}
+
+output "Road_name" {
+  value = upper(local.Name)
+}
+
+locals {
+  state = "state Highway"
+}
+
+output "Road_name_start" {
+  # value = startswith(upper(local.state),"ROAD") #false
+  # value = startswith(lower(local.state),"roa") #false
+  # value = startswith(lower(local.state),"hig") #false
+
+  value = startswith(lower(local.state),"sta") #true
+}
+
+output "arith" {
+  value = local.age * 2
+}
+
+output "power" {
+  value = pow(local.age, 2)
+}
+
+# Reads the content of a file and returns it as string
+output "Below-is-the-details-of-user-file" {
+  value = file("${path.module}/users.yaml")
+}
+
+output "merge" {
+  value = merge(
+    {
+      Name = local.Name
+      Age  = local.age
+    },
+    {
+      forest = "Savana"
+    }
+  )
+}
+```
+
+---
+
+# YAML File Used
+
+## users.yaml
+
+```yaml
+bike:
+  - name: unicorn
+    group: Honda
+
+  - name: grazia
+    group: Honda
+
+  - name: Apache
+    group: TVS
+
+  - name: karizma
+    group: Hero
+```
+
+---
+
+# Understanding the Functions
+
+## 1. upper()
+
+Converts all characters into uppercase.
+
+### Example
+
+```hcl
+upper(local.Name)
+```
+
+### Output
+
+```text
+NATIONAL HIGHWAY
+```
+
+---
+
+## 2. startswith()
+
+Checks whether a string starts with a specific character sequence.
+
+### Example
+
+```hcl
+startswith(lower(local.state), "sta")
+```
+
+### Output
+
+```text
+true
+```
+
+---
+
+## 3. Arithmetic Operation
+
+Terraform can also perform mathematical calculations.
+
+### Example
+
+```hcl
+local.age * 2
+```
+
+### Output
+
+```text
+100
+```
+
+---
+
+## 4. pow()
+
+Used for power calculations.
+
+### Example
+
+```hcl
+pow(local.age, 2)
+```
+
+### Output
+
+```text
+2500
+```
+
+---
+
+## 5. file()
+
+Reads content from an external file.
+
+### Example
+
+```hcl
+file("${path.module}/users.yaml")
+```
+
+This is useful when:
+
+* reading shell scripts
+* loading configuration files
+* working with Kubernetes YAML manifests
+* user data scripts
+
+---
+
+## 6. merge()
+
+Combines multiple maps into a single map.
+
+### Example
+
+```hcl
+merge(
+  {
+    Name = local.Name
+    Age  = local.age
+  },
+  {
+    forest = "Savana"
+  }
+)
+```
+
+### Output
+
+```hcl
+{
+  "Age"    = 50
+  "Name"   = "National Highway"
+  "forest" = "Savana"
+}
+```
+
+---
+
+# Sample Terraform Output
+
+```text
+Road_name = "NATIONAL HIGHWAY"
+Road_name_start = true
+arith = 100
+power = 2500
+```
+
+---
+
+# Key Learnings
+
+* Worked with Terraform locals and outputs
+* Practiced commonly used Terraform functions
+* Learned how to read external YAML files
+* Understood how maps are merged in Terraform
+* Performed arithmetic operations using Terraform functions
+
+# Author
+
+Bhabani Shankar
