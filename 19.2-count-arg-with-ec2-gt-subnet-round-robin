@@ -1,0 +1,89 @@
+locals {
+  comon_tags = {
+    project = "own_network"
+    owner   = "own_terra_vpc"
+  }
+}
+
+resource "aws_vpc" "own_vpc" {
+  cidr_block = "10.0.0.0/16"
+  tags       = local.comon_tags
+}
+
+variable "ec2_count" {
+  type    = number
+  default = 7   # Example: launching 7 instances
+}
+
+variable "subnet_count" {
+  type    = number
+  default = 3   # Example: 3 subnets across AZs
+}
+
+resource "aws_subnet" "Dynamic_subnet" {
+  vpc_id     = aws_vpc.own_vpc.id
+  cidr_block = "10.0.${count.index}.0/24"
+  count      = var.subnet_count
+
+  tags = merge(
+    local.comon_tags,
+    { item_number = tostring(count.index) },
+    { full_details = "${local.comon_tags.owner}-${count.index}" },
+    { Name = "own-tera-subnet-${count.index}" }
+  )
+}
+
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+resource "aws_instance" "ex1" {
+  count         = var.ec2_count
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = "t2.micro"
+
+  # Round-robin subnet assignment
+  subnet_id = aws_subnet.Dynamic_subnet[count.index % length(aws_subnet.Dynamic_subnet)].id
+
+  tags = {
+    Name = "own-tera-instance-${count.index}"
+  }
+}
+
+output "Displaying_instance_count" {
+    value = "Number of EC2 will be created ${length(aws_instance.ex1)}"
+  
+}
+output "Displaying_subnet_count" {
+    value = "Number of subnet will be created ${length(aws_subnet.Dynamic_subnet)}"
+  
+}
+
+###Background Activity Example
+
+How modulo cycles
+Modulo (%) gives the remainder when dividing.
+So with 3 subnets:
+- Instance 0 → 0 % 3 = 0 → Subnet[0]
+- Instance 1 → 1 % 3 = 1 → Subnet[1]
+- Instance 2 → 2 % 3 = 2 → Subnet[2]
+- Instance 3 → 3 % 3 = 0 → Subnet[0] (cycle restarts)
+- Instance 4 → 4 % 3 = 1 → Subnet[1]
+- Instance 5 → 5 % 3 = 2 → Subnet[2]
+- Instance 6 → 6 % 3 = 0 → Subnet[0]
+This is how Terraform spreads instances across subnets in a round‑robin pattern.
+
+- Subnets: 3 subnets across 3 Availability Zones.
+- Instances: 7 EC2 instances.
+This way, your application cluster is resilient: if one AZ fails, the workload continues in the others.
