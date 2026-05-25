@@ -1,0 +1,91 @@
+# Local variable for project name
+locals {
+  project = "Village-development"
+  ubu_id= data.aws_ami.own_ami_ubuntu_IND.id
+}
+
+# Variable for EC2 details: must be a list of objects
+variable "ec2_details_input" {
+  type = list(object({
+    inst_type = string
+    AMI_name  = string
+  }))
+  default = []
+}
+
+
+# Variable for subnet count
+variable "subnet_cnt" {
+  type    = number
+}
+
+# Data source for VPC
+data "aws_vpc" "own_vpc" {
+  default = true
+}
+
+# Subnet resource
+resource "aws_subnet" "multi_own_subnet" {
+  count             = var.subnet_cnt
+  vpc_id            = data.aws_vpc.own_vpc.id
+  cidr_block = cidrsubnet(
+    data.aws_vpc.own_vpc.cidr_block,
+    2,
+    count.index + 1
+  )
+
+  tags = {
+    Name       = "own_subnet_serial_no-${count.index}"
+    Grass_root = local.project
+  }
+}
+
+# EC2 instance resource
+resource "aws_instance" "my_ec2" {
+  count         = length(var.ec2_details_input)
+  instance_type = var.ec2_details_input[count.index].inst_type
+  ami           = local.ubu_id   #[var.ec2_details_input[count.index].AMI_name]
+
+  subnet_id = aws_subnet.multi_own_subnet[count.index % length(aws_subnet.multi_own_subnet)].id
+  # ✅ This distributes EC2 instances across subnets in round-robin fashion
+
+  tags = {
+    Name       = "own_terra-serial-${count.index}"
+    Grass_root = local.project
+  }
+}
+
+
+
+
+
+
+
+ec2_details_input = [
+  {
+    AMI_name  = "ubuntu"
+    inst_type = "t3.micro"
+  },
+  {
+    AMI_name  = "ubuntu"
+    inst_type = "t3.small"
+  }
+]
+
+
+
+# Find the latest Ubuntu 22.04 AMI published by Canonical
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
