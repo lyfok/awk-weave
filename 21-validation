@@ -1,0 +1,168 @@
+Task 1: Set Up the Network Layer
+    Use a data source to pull your default AWS VPC information.
+    Create a resource block that uses count to spin up a dynamic number of subnets (var.subnet_cnt).
+
+Add a verification rule inside the variable block ensuring that subnet_cnt is at least 1 or greater so the script doesn't run with zero subnets.
+
+Task 2: Grab the Latest AMI Details dynamically
+
+Create an AMI data source block for Ubuntu using Canonical’s AWS account ID.
+
+Create another AMI data source block for NGINX using Bitnami's AWS account ID.
+
+Link both of these resolved AMI IDs into a single local map object so they can be easily looked up using friendly names ("ubuntu" and "nginx").
+
+Task 3: Define Input Schemes with Restrictions
+
+Set up a list-of-objects variable (var.ec2_details_input) to accept the target configurations list.
+
+Write a conditional validation block checking every list entry to confirm that users only type in t3.micro or t3.small instance sizes. Reject everything else.
+
+Task 4: Provision the Instances Safely
+
+Set up the aws_instance resource to spin up an instance count matching the length of your input config array.
+
+Pass the correct AMI to each instance using the mapping object by referencing the text name provided in your input array.
+
+Use the modulo equation (%) on the subnet mapping string to distribute the instances across the available subnets in a round-robin rotation.
+# Multi-AMI Provisioning Engine with Round-Robin Subnet Distribution
+
+This repository contains my infrastructure-as-code setup to handle the dynamic deployment of mixed EC2 instance fleets using a configuration list schema. The code provides abstract, human-readable tags for image selection (`ubuntu`, `nginx`), runs targeted list evaluations via native Terraform validations, and balances the compute layer smoothly across a variable pool of subnets.
+
+Infrastructure Blueprint (`main.tf`)
+
+```hcl
+# Local variables
+locals {
+  project = "Village-development"
+  multi_ami_ids = {
+    "nginx"  = data.aws_ami.own_ami_nginx.id
+    "ubuntu" = data.aws_ami.own_ami_ubuntu_IND.id
+  }
+}
+
+variable "ec2_details_input" {
+  type = list(object({
+    inst_type = string
+    AMI_name  = string
+  }))
+  default = []
+  
+  validation {
+    #condition= alltrue([for x in var.ec2_details_input : contains(["t3.micro","t3.small"],x.inst_type)])
+    condition = alltrue([for x in var.ec2_details_input : x.inst_type == "t3.micro" || x.inst_type =="t3.small"])
+    error_message="only t3.micro and t3.small is allowed.Your entered value is not correct"
+  }
+}
+
+# Variable for subnet count
+variable "subnet_cnt" {
+  type = number
+  validation {
+    #condition = var.subnet_cnt ==0 #You have to pass atleast 1 subnet
+    #condition     = var.subnet_cnt >= 1 && var.subnet_cnt <= 10
+    condition = var.subnet_cnt >= 1
+    error_message = "You have to pass atleast 1 subnet"
+  }
+}
+
+# Data source for VPC
+data "aws_vpc" "own_vpc" {
+  default = true
+}
+
+# Subnet resource
+resource "aws_subnet" "multi_own_subnet" {
+  count  = var.subnet_cnt
+  vpc_id = data.aws_vpc.own_vpc.id
+  cidr_block = cidrsubnet(
+    data.aws_vpc.own_vpc.cidr_block,
+    2,
+    count.index + 1
+  )
+
+  tags = {
+    Name       = "own_subnet_serial_no-${count.index}"
+    Grass_root = local.project
+  }
+}
+
+# EC2 instance resource
+resource "aws_instance" "my_ec2" {
+  count         = length(var.ec2_details_input)
+  instance_type = var.ec2_details_input[count.index].inst_type
+
+  # Dynamic lookup matching user-friendly input string to the resolved AMI map
+  ami = local.multi_ami_ids[var.ec2_details_input[count.index].AMI_name]
+
+  subnet_id = aws_subnet.multi_own_subnet[count.index % length(aws_subnet.multi_own_subnet)].id
+
+  tags = {
+    Name       = "own_terra-serial-${count.index}"
+    Grass_root = local.project
+  }
+}
+
+### Data Sources
+
+# Bitnami NGINX AMI
+data "aws_ami" "own_ami_nginx" {
+  most_recent = true
+  owners      = ["679593333241"] # Official Bitnami AWS Account ID
+
+  filter {
+    name   = "name"
+    values = ["bitnami-nginx-1.31.*-debian-12-amd64-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# Ubuntu AMI
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS Account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+### Outputs
+
+output "Please_find_nginx_AMI_id_details" {
+  value = data.aws_ami.own_ami_nginx.id
+}
+
+output "Please_find_ubuntu_AMI_id_details" {
+  value = data.aws_ami.own_ami_ubuntu_IND.id
+}
+
+```
+
+---
+
+## Input Definitions Runtime File (`terraform.tfvars`)
+
+This file contains the configuration array matrix fed directly into the deployment logic during execution planning:
+
+```hcl
+ec2_details_input=[
+  {
+    inst_type="t3.micro"
+    AMI_name  = "ubuntu"
+  },
+  {
+    inst_type="t3.small"
+    AMI_name  = "nginx"
+  }
+]
