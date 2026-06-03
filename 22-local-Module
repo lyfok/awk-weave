@@ -1,0 +1,165 @@
+# AWS Infrastructure Deployment via Custom Terraform Modules
+
+This project demonstrates a modular approach to provisioning infrastructure on AWS using Terraform. Instead of writing monolithic configuration files, the architecture is split into a **root module** that orchestrates deployments and **child modules** dedicated to specific resource types (EC2 and S3).
+
+## Project Architecture & Directory Structure
+
+The project repository is structured as follows. It isolates the child module configurations within a dedicated directory (`own-terra-child-module-details`), keeping the root directory clean and maintainable.
+
+
+.
+├── main.tf                            # Root module: Instantiates the EC2 and S3 child modules
+├── provide.tf                         # Root module: Defines the AWS provider configuration
+├── terra.tf                           # Root module: Configures required providers and versions
+├── terraform.tfstate                  # Local state file tracking deployed resources
+└── own-terra-child-module-details    # Internal directory containing reusable child modules
+    ├── ec2-own                        # Child module for EC2 compute provisioning
+    │   ├── data.tf                    # Dynamically fetches the latest Ubuntu AMI
+    │   └── main.tf                    # Declares EC2 resource, variables, and configurations
+    └── s3-own                         # Child module for S3 storage provisioning
+        └── main.tf                    # Declares random ID generator, S3 bucket, and outputs
+
+
+## Detailed Task Breakdown & Implementation
+
+### Task 1: Setup Core Infrastructure Components (Root Module)
+
+The root module acts as the entry point. It configures the target AWS cloud provider, defines strict version constraints for stability, and calls our internal child modules.
+
+#### `provide.tf`
+
+Specifies the region where our infrastructure will be deployed.
+
+```hcl
+# Configure the default AWS Provider to target the Mumbai region
+provider "aws" {
+  region = "ap-south-1"
+}
+
+```
+
+#### `terra.tf`
+
+Locks down the specific provider versions to ensure configuration consistency across different environments.
+
+```hcl
+# Define provider requirements and source registries
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.41.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+```
+
+#### `main.tf`
+
+Instantiates both the S3 and EC2 local child modules.
+
+```hcl
+# Call the internal child module to provision the S3 storage stack
+module "eco-s3" {
+  source = "./own-terra-child-module-details/s3-own"
+}
+
+# Call the internal child module to provision the EC2 compute stack
+module "eco-ec2" {
+  source = "./own-terra-child-module-details/ec2-own"
+}
+
+```
+
+---
+
+### Task 2: Build the EC2 Compute Child Module
+
+Located in `own-terra-child-module-details/ec2-own/`, this module dynamically queries AWS for the latest OS image, spins up an instance type, and enforces corporate tagging standards.
+
+#### `data.tf`
+
+Queries the AWS EC2 catalog to dynamically fetch the latest Ubuntu 22.04 LTS AMI ID maintained by Canonical.
+
+```hcl
+# Lookup the latest official Ubuntu 22.04 HVM SSD AMI
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's Official AWS Account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+```
+
+#### `main.tf`
+
+Contains the actual resource definition for the virtual machine along with input variables used for customization.
+
+```hcl
+# Provision the EC2 Instance using the fetched AMI and input variables
+resource "aws_instance" "own_ec2" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.insta_type
+
+  # Applying standardized tagging for resource tracking and billing
+  tags = {
+    Name       = var.user_defind
+    ManagedBy  = "Terraform"
+    CreatedBy  = "Infrastructure-Team"
+  }
+}
+
+# Variable Definitions for Compute Customization
+variable "insta_type" {
+  type    = string
+  default = "t3.micro"
+}
+
+variable "user_defind" {
+  type        = string
+  default     = "terra-module-insta"
+  description = "Name tag for the EC2 resource. Required for identifying ownership in the AWS Console."
+}
+
+```
+
+---
+
+### Task 3: Build the S3 Storage Child Module
+
+Located in `own-terra-child-module-details/s3-own/main.tf`. S3 bucket names must be globally unique across all of AWS. This module pairs a random string generator with an S3 resource to guarantee unique naming, then passes the resulting bucket name back up via an output block.
+
+#### `main.tf`
+
+```hcl
+# Generate a cryptographically random hexadecimal string to ensure S3 name uniqueness
+resource "random_id" "any-id" {
+  byte_length = 6
+}
+
+# Provision the S3 bucket using the random hex suffix
+resource "aws_s3_bucket" "own-bucket" {
+  bucket = "my-terra-module-bucket-${random_id.any-id.hex}"
+}
+
+# Output block to expose the fully qualified bucket name to the root context
+output "below_is_the_bucket_detail" {
+  value       = aws_s3_bucket.own-bucket.bucket
+  description = "The globally unique name generated for the deployed S3 bucket."
+}
+
+```
