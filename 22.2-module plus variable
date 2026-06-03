@@ -1,0 +1,160 @@
+# AWS Infrastructure Deployment via Mixed Local and Registry Terraform Modules
+
+This project demonstrates an infrastructure-as-code pattern that combines **custom local child modules** with **community-vetted modules from the public Terraform Registry**. This specific update parameterizes the public S3 bucket module by passing input configurations directly from a root-level variable file.
+
+---
+
+## Project Directory Architecture
+
+The repository layout includes the root configuration files along with an isolated directory containing internal compute logic:
+
+```text
+.
+├── main.tf                            # Root module: Instantiates registry S3 and local EC2 modules
+├── provide.tf                         # Root module: Configures the target AWS region
+├── terra.tf                           # Root module: Defines provider versions and constraints
+├── variable.tf                        # Root module: Manages global inputs (e.g., S3 bucket naming)
+├── terraform.tfstate                  # Local active deployment state file
+├── terraform.tfstate.backup           # Last known good state backup
+└── own-terra-child-module-details    # Internal directory for custom module code
+    └── ec2-own                        # Custom child module for compute provisioning
+        ├── data.tf                    # Dynamic Ubuntu AMI data source query
+        └── main.tf                    # EC2 resource definitions and local variable blocks
+
+```
+
+---
+
+## Technical Task Roadmap & Implementations
+
+### Task 1: Main Execution Core, Variables & Version Constraints (Root Module)
+
+The root workspace handles provider locking, global variable parameters, and block coordination. The registry S3 module now dynamically references a root variable rather than using a hardcoded string.
+
+#### `terra.tf`
+
+Enforces strict provider rules. The AWS provider constraint is set to `>= 6.42.0` to support upstream registry requirements and avoid engine compilation lockups.
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"  # Configured to meet upstream module prerequisites
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+```
+
+#### `provide.tf`
+
+Establishes default context arguments for the primary infrastructure plane.
+
+```hcl
+# Configure the default AWS Provider to target the Mumbai region
+provider "aws" {
+  region = "ap-south-1"
+}
+
+```
+
+#### `variable.tf`
+
+Declares global input variables used to pass configurations dynamically into individual modules.
+
+```hcl
+variable "buk-name" {
+  type    = string
+  default = "my-bucket-from-variable-use"
+}
+
+```
+
+#### `main.tf`
+
+Implements the call blocks. The public S3 bucket names are mapped to the variable defined above.
+
+```hcl
+# Deprecated local module invocation - retained for architectural history tracking
+#module "eco-s3" {
+#  source = "./own-terra-child-module-details/s3-own"
+#}
+
+# Task 1a: Consume verified external modules from the public registry using root variables
+module "s3-bucket" {                                                 #Imported module
+  source  = "terraform-aws-modules/s3-bucket/aws"
+  version = "5.14.0"
+
+  bucket = var.buk-name                                             #variable name
+}
+
+# Task 1b: Consume unmanaged custom modules via local pathing references
+module "eco-ec2" {
+  source = "./own-terra-child-module-details/ec2-own"
+}
+
+```
+
+---
+
+### Task 2: Build the EC2 Compute Child Module
+
+Isolated under `own-terra-child-module-details/ec2-own/`, this custom module dynamically queries AWS matrices for execution images and standardizes deployment tagging configurations using local structural variables.
+
+#### `data.tf`
+
+Abstracts hardcoded AMI references by dynamically targeting the latest images managed directly by Canonical.
+
+```hcl
+# Lookup the latest official Ubuntu 22.04 HVM SSD AMI
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's Official AWS Account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+```
+
+#### `main.tf`
+
+Manages the hardware deployment and parameters needed to cleanly initialize the compute tier.
+
+```hcl
+# Provision the EC2 Instance using the fetched AMI and input variables
+resource "aws_instance" "own_ec2" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.insta_type
+
+  # Applying standardized tagging for resource tracking and billing
+  tags = {
+    Name       = var.user_defind
+    ManagedBy  = "Terraform"
+    CreatedBy  = "Infrastructure-Team"
+  }
+}
+
+# Variable Definitions for Compute Customization
+variable "insta_type" {
+  type    = string
+  default = "t3.micro"
+}
+
+variable "user_defind" {
+  type        = string
+  default     = "terra-module-insta"
+  description = "Name tag for the EC2 resource. Required for identifying ownership in the AWS Console."
+}
