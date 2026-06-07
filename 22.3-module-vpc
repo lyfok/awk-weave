@@ -1,0 +1,144 @@
+# Terraform AWS VPC Deployment Using Public Module
+
+## Project Overview
+
+In this project, I explored how to use a public Terraform module from the Terraform Registry instead of creating all AWS resources manually.
+
+The objective was to create a VPC using the widely used `terraform-aws-modules/vpc/aws` module and understand how Terraform modules internally provision AWS resources such as VPCs and subnets.
+
+---
+
+## Requirements
+
+The project requirements were:
+
+* Create a VPC using the public AWS VPC module.
+* Name the VPC `12-public-modules`.
+* Use the CIDR block `10.0.0.0/16`.
+* Fetch available Availability Zones dynamically using a Terraform data source.
+* Create a private subnet with CIDR `10.0.0.0/24`.
+* Create a public subnet with CIDR `10.0.128.0/24`.
+
+---
+
+## My Implementation
+
+Instead of manually creating resources such as:
+
+```hcl
+resource "aws_vpc" {}
+resource "aws_subnet" {}
+resource "aws_internet_gateway" {}
+```
+
+I used the public VPC module available in the Terraform Registry.
+
+The module internally creates the required AWS resources based on the input values I provide.
+
+### VPC Configuration
+
+```hcl
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "6.6.1"
+
+  name = "own_highway_vpc"
+  cidr = "10.0.0.0/16"
+
+  azs = data.aws_availability_zones.az_details.names
+
+  private_subnets = ["10.0.0.0/24"]
+  public_subnets  = ["10.0.128.0/24"]
+}
+```
+
+---
+
+## Availability Zone Discovery
+
+Instead of hardcoding Availability Zones, I used a data source:
+
+```hcl
+data "aws_availability_zones" "az_details" {
+  state = "available"
+}
+```
+
+This allows Terraform to dynamically fetch all available AZs in the selected AWS region.
+
+---
+
+## AWS Provider Configuration
+
+```hcl
+provider "aws" {
+  region = "ap-south-1"
+}
+```
+
+The infrastructure is deployed in the Mumbai region (`ap-south-1`).
+
+---
+
+## Terraform Configuration
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+```
+
+---
+
+## Project Structure
+
+```text
+.
+├── data.tf
+├── main.tf
+├── provider.tf
+├── service_road_child_module_details
+│   └── vpc_own_module
+├── terra.tf
+└── terraform.tfstate
+```
+
+### File Purpose
+
+| File                              | Purpose                                             |
+| --------------------------------- | --------------------------------------------------- |
+| data.tf                           | Fetches AWS Availability Zones                      |
+| main.tf                           | Invokes the public VPC module                       |
+| provider.tf                       | Configures AWS provider                             |
+| terra.tf                          | Terraform and provider version requirements         |
+| terraform.tfstate                 | Stores infrastructure state                         |
+| service_road_child_module_details | Additional module experimentation and learning area |
+
+---
+
+## Key Learning Outcomes
+
+Through this project, I learned:
+
+* How to consume public Terraform modules from the Terraform Registry.
+* How Terraform modules abstract multiple AWS resources behind a simple interface.
+* How to use Terraform data sources to fetch AWS information dynamically.
+* The relationship between Availability Zones and subnet creation.
+* How public and private subnet CIDRs are passed as inputs to a module.
+* How Terraform downloads and executes module code during `terraform init`.
+* The difference between root modules and reusable child modules.
+
+
+## Conclusion
+
+This project helped me understand how Terraform public modules can significantly reduce the amount of infrastructure code while still providing flexibility. It also gave me practical exposure to module consumption, data sources, AWS networking basics, and Terraform project structure.
