@@ -1,0 +1,203 @@
+# Setting Up My AWS Network & EC2 Instance with Terraform
+
+This project is where I've put together my AWS network setup and spun up an EC2 instance. I've broken the code down into clean pieces, moved hardcoded values into `locals` blocks so they're easier to manage, used a `data` block to dynamically grab the newest Ubuntu 22.04 AMI, and linked the EC2 instance directly to the VPC so it deploys into the right subnet automatically.
+
+---
+
+## 🛠️ How My Files Are Organized
+
+Instead of dumping everything into one massive file, I've split things up into smaller files so it's way easier to track what is doing what:
+
+* `common_local.tf` / `locals.tf` — Where I keep project-wide settings like the project name and shared tags that multiple resources need to use.
+* `data.tf` — Handles external lookups, like finding the available AWS Availability Zones and checking for the correct AMI.
+* `prov.tf` — My AWS provider configurations, including any specific region setups and custom aliases.
+* `terraform.tf` — Keeps track of the exact versions for the HashiCorp providers I'm using so nothing breaks down the line.
+* `vpc_module.tf` — The actual network configuration where I pull in the official VPC module to build out subnets and routing.
+* `ec2.tf` — Where my EC2 instance is configured, dynamically grabbing its subnet and security group IDs straight from the VPC module.
+
+---
+
+### Shared Project Configurations & Core Computing (`ec2.tf`)
+
+```hcl
+locals {
+  project_name = "New_sanctuary"
+  common_tags = {
+    forest   = "own_Darjiling"
+    location = "own_terra_small_park_app"
+  }
+
+}
+
+data "aws_availability_zones" "az_details" {
+  state = "available"
+}
+
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Use India provider alias
+
+  # Filter by AMI name pattern
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  # Ensure virtualization type is HVM
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+module "ec2-instance" {
+  source                 = "terraform-aws-modules/ec2-instance/aws"
+  version                = "6.4.0"
+  name                   = "Own_tiger_reserve_application"
+  ami                    = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type          = "t3.micro"
+  vpc_security_group_ids = [module.vpc.default_security_group_id]
+  #value comes directly from the source code of the AWS VPC module (terraform-aws-modules/vpc/aws)
+  #The EC2 module expects the vpc_security_group_ids argument to be a list of strings, because an EC2 instance can have multiple 
+  #security groups attached to it at the same time.
+  #Even if you are only assigning one security group, Terraform requires you to wrap it in square
+  subnet_id = module.vpc.public_subnets[0]
+  tags      = { Name = local.project_name }
+}
+
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### Constraints and Provider Specifications (`terraform.tf`)
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+locals {
+  nam          = "own_highway_vpc"
+  cdr          = "10.0.0.0/16"
+  pvt_subnets  = ["10.0.0.0/24"]
+  publ_subnets = ["10.0.128.0/24"]
+}
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "6.6.1"
+
+  name = local.nam
+  cidr = local.cdr
+
+  azs = data.aws_availability_zones.az_details.names
+
+  private_subnets = local.pvt_subnets
+  public_subnets  = local.publ_subnets
+
+  tags = merge({
+    Name = local.project_name
+  }, local.common_tags)
+}
+
+```
+
+
+
+## 🧠 My Dev Log: What I Learned & Errors I Fixed
+
+These are my personal notes on how the data flows between my modules, along with the annoying syntax errors I ran into and how I got past them.
+
+### 🔍 Topic 1: What is `module.vpc.default_security_group_id`?
+
+**My Doubt:** Where is this value actually coming from? I didn't define it anywhere in my code.
+
+**What's actually happening:** AWS automatically spawns a "Default Security Group" the second a new VPC is created. Because we are using an external registry module (`terraform-aws-modules/vpc/aws`), the authors of that module wrote code to intentionally "spit out" that automated ID so we can use it elsewhere.
+
+They did it with an output block inside their own source code that looks like this:
+
+```hcl
+output "default_security_group_id" {
+  description = "The ID of the VPC default security group"
+  value       = aws_vpc.this[0].default_security_group_id
+}
+
+```
+
+By typing `module.vpc.default_security_group_id`, we are just reaching inside their code, grabbing that output value, and handing it to our EC2 instance.
+
+* **Why the square brackets `[...]`?** An EC2 instance can have multiple security groups attached to it at once, so the EC2 module expects a **list**. Even though we are only feeding it one security group ID, Terraform makes us wrap it in brackets `[ ]` to format it as a list.
+
+---
+
+### 🔍 Topic 2: Is `module.vpc.public_subnets[0]` safe if my subnet count changes?
+
+**My Doubt:** How do I know how many subnets are going to be created? What if I scale from 3 subnets down to 1, or up to 4? Will index `[0]` crash my code?
+
+**What's actually happening:** The VPC module decides how many subnets to create based on how many CIDR blocks I type into my `publ_subnets` list. If I give it one CIDR block, it makes one subnet. If I give it three, it makes three.
+
+Because lists in programming always start counting at `0` instead of `1`, index **`[0]` is the safest bet** as long as I have at least one subnet.
+
+* **If I create 1 subnet:** `[0]` targets that exact subnet.
+* **If I create 3 subnets:** `[0]` targets the first subnet and simply ignores the other two.
+* **If I create 4 subnets:** `[0]` still targets the first subnet perfectly.
+
+Using `[0]` ensures that no matter how much I scale my network up or down later, the EC2 instance will always find a valid home.
+
+---
+
+### 🔍 Topic 3: Errors I Had to Fix
+
+#### ❌ The Provider Alias Error
+
+* **The Error:** `Error: Provider configuration not present... for provider["registry.terraform.io/hashicorp/aws"].ubuntu_IND`
+* **Why it happened:** In my AMI data block, I explicitly told it to use an aliased provider via `provider = aws.ubuntu_IND`. But Terraform checked my code and couldn't find a `provider "aws"` block that actually carried the `alias = "ubuntu_IND"` label.
+* **How I fixed it:** I made sure my provider configuration file had the matching alias declared with the correct region:
+```hcl
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+
+
+#### ❌ The Missing Key/Value Separator Error
+
+* **The Error:** `Error: Missing key/value separator on tags = {local.project_name}`
+* **Why it happened:** AWS tags require a key and a value (like `Name = "MyVPC"`). By just throwing `{local.project_name}` inside curly brackets, I gave Terraform a value, but didn't tell it what the label key should be.
+* **How I fixed it:** I added the missing `Name =` key:
+```hcl
+tags = { Name = local.project_name }
+
+```
+
+
+
+#### ❌ Stacking Maps with Commas
+
+* **The Error:** I tried combining individual tags and my local common tags map by separating them with a comma like this: `tags = { Name = local.project_name }, local.all`. Terraform hated this syntax.
+* **How I fixed it:** I used the built-in `merge()` function, which cleanly mashes individual tags and local tag maps together into one single block:
+```hcl
+tags = merge({ Name = local.project_name }, local.common_tags)
+
+```
