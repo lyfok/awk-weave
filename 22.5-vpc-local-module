@@ -1,0 +1,100 @@
+Create a new folder vpc_project_module for this project.
+Create a new module under the vpc_project_module/modules/networking folder following the standard module structure: variable.tf and terra.tf.
+Create a provider requirement block inside terra.tf specifying the hashicorp/aws and hashicorp/random providers, along with an aliased AWS provider for ap-south-1.
+Create a variable vpc_cidr_own of type string inside variable.tf and add a custom validation block using can(cidrnetmask(...)) to ensure the received CIDR block is valid.
+Create a new file vpc_main_own_networking.tf under the root configuration folder vpc_project_module, which calls the local module using a relative path source of ./modules/networking and assigns the string value "10.0.0.0/16" to vpc_cidr_own.
+
+
+# Terraform Local Modules: Networking VPC Lab
+
+This repository demonstrates how to design, organize, and consume a **local Terraform module** to provision a Virtual Private Cloud (VPC) on AWS. It implements input variable validations (`can()` and `cidrnetmask()`) to guarantee infrastructure configuration reliability before runtime deployment.
+
+## Project Structure
+
+Following the standard layout for Terraform local modules, the project isolates the core resource blueprints inside the `modules/` directory while keeping the root configuration clean for declarative execution.
+
+```text
+/home/ec2-user/vpc_project_module
+.
+├── modules
+│   └── networking
+│       ├── terra.tf            # Provider configuration & versions
+│       └── variable.tf         # Input variable definitions & validation guards
+├── terraform.tfstate           # Local state tracking file
+└── vpc_main_own_networking.tf  # Root configuration calling the local module
+
+2 directories, 4 files
+
+```
+
+---
+
+## Configuration Files
+
+### 1. Root Configuration (`vpc_main_own_networking.tf`)
+
+This file consumes our local module by establishing a relative file pathway (`./modules/networking`). It assigns the custom target CIDR block block dynamically to the child module.
+
+```hcl
+module "vpc" {
+  source       = "./modules/networking"
+  vpc_cidr_own = "10.0.0.0/16"
+}
+
+```
+
+### 2. Module Provider Config (`modules/networking/terra.tf`)
+
+Defines downstream dependency requirements for the local module, declaring the required provider binaries (`hashicorp/aws` and `hashicorp/random`) alongside an aliased provider block targeting the `ap-south-1` (Mumbai) region.
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### 3. Module Variables (`modules/networking/variable.tf`)
+
+This file acts as the explicit interface boundary for the networking module. It implements a strict validation block using nested `can()` and `cidrnetmask()` evaluation steps. If the input parsed fails standard IPv4 CIDR formatting rules, execution halts safely with a custom error message.
+
+```hcl
+variable "vpc_cidr_own" {
+  type = string
+
+  validation {
+    condition     = can(cidrnetmask(var.vpc_cidr_own))
+    error_message = "The vpc_cidr must contain a valid CIDR block own."
+  }
+}
+
+```
+
+---
+
+## Deep-Dive: How the Variable Validation Works
+
+The core of our module's input validation relies on this logic string:
+
+```hcl
+condition = can(cidrnetmask(var.vpc_cidr_own))
+
+```
+
+* **`cidrnetmask(...)`**: Evaluates the given string input. If given a healthy CIDR syntax (such as `"10.0.0.0/16"`), it maps and surfaces its explicit subnet mask string representation (`"255.255.0.0"`). If it encounters any arbitrary invalid text string, the underlying function breaks and errors out.
+* **`can(...)`**: Serves as an error interception boundary wrapper. It transforms successful code executions into a return state of `true`, while safely converting processing failures or parameter crashes into a clean `false` state—prompting Terraform to abort deployments gracefully using our designated `error_message`.
