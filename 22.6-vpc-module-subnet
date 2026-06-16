@@ -1,0 +1,133 @@
+1. **Create a new module variable `subnet_config**` in `project1/modules/vpc-own/variable.tf` that receives subnet CIDR blocks and Availability Zones from the user using a complex object map.
+2. **Adjust the module block in the root configuration** (`project1/mai.tf`) to remove `multi_sub_details` and add an entry for `subnet_config` using a single subnet entry with the CIDR block `10.0.0.0/24` and a valid AZ for the `ap-south-1` region (e.g., `ap-south-1a`).
+3. **Implement a new resource or refactor** within the module (`project1/modules/vpc-own/subnets.tf`) to create the actual subnets using a `for_each` loop looping over the new `subnet_config` variable instead of hardcoding individual resource blocks.
+
+## Current Project Structure
+
+The project layout on our EC2 environment looks like this:
+
+```text
+[ec2-user@ip-172-31-35-195 ~]$ tree project1/
+project1/
+├── mai.tf
+├── modules
+│   └── vpc-own
+│       ├── subnets.tf
+│       ├── variable.tf
+│       └── vpc.tf
+├── terra.tf
+├── terraform.tfstate
+└── terraform.tfstate.backup
+
+2 directories, 7 files
+
+```
+
+---
+
+
+### 1. Root Configurations
+
+#### `project1/terra.tf`
+
+This file configures our required providers and targets the Mumbai (`ap-south-1`) region.
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+#### `project1/mai.tf`
+
+The root file calls the custom `vpc-own` module and passes configuration for the VPC and a static map containing two subnets.
+
+```hcl
+module "Dev_vpc" {
+  source = "./modules/vpc-own"
+  own_vpc_details = {
+    config1_vpc_cidr = "10.0.0.0/16"
+    Name             = "own_vpc_module "
+  }
+
+  multi_sub_details = {
+    "subnet_1" = {
+      cidr_block_own = "10.0.0.0/24"
+    }
+    "subnet_2" = {
+      cidr_block_own = "10.0.1.0/24"
+    }
+  }
+}
+
+```
+
+---
+
+### 2. Module Configurations (`modules/vpc-own/`)
+
+#### `modules/vpc-own/variable.tf`
+
+Defines the structure for our current configuration maps.
+
+```hcl
+variable "multi_sub_details" {
+  type = map(object({
+    cidr_block_own = string
+  }))
+  
+}
+
+variable "own_vpc_details" {
+  type = object({
+    config1_vpc_cidr = string
+    Name=string
+  })
+  
+}
+
+```
+
+#### `modules/vpc-own/vpc.tf`
+
+Handles the base VPC network layer.
+
+```hcl
+resource "aws_vpc" "own_vpc" {
+  cidr_block = var.own_vpc_details.config1_vpc_cidr
+  
+}
+
+```
+
+#### `modules/vpc-own/subnets.tf`
+
+Currently uses two explicit, separate resource blocks to build the subnets out of the old variable map.
+
+```hcl
+resource "aws_subnet" "own_subet1" {
+  vpc_id = aws_vpc.own_vpc.id
+  cidr_block = var.multi_sub_details["subnet_1"].cidr_block_own
+  
+}
+resource "aws_subnet" "own_subet2" {
+  vpc_id = aws_vpc.own_vpc.id
+  cidr_block = var.multi_sub_details["subnet_2"].cidr_block_own
+  
+}
