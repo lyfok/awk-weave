@@ -1,0 +1,235 @@
+Create a new module output own_vpc_id_details to expose the VPC ID of the created VPC.
+Define a public_subnet_display output to expose each public subnet’s ID and availability zone.
+Define a private_subnet_display output to expose each private subnet’s ID and availability zone.
+Update own_module.tf to surface the new outputs from the child module (module_vpc_id_details, module_public_subnet_display_doll, module_private_subnet_display).
+Use locals (public_subnet_check, private_subnet_check) to collect subnet IDs and availability zones for filtering.
+Ensure resources.tf creates subnets with for_each and tags them consistently.
+Keep the Internet Gateway and public route table conditional on the presence of public subnets.
+Associate all public subnets with the public route table using for_each on local.public_subnet_check.
+Validate subnet CIDRs in variable.tf to prevent invalid configurations.
+Maintain modularity by exposing only necessary details through outputs, not raw resources.
+
+# Highway Network Terraform Module
+
+## Directory Structure
+
+```text
+highway/
+├── own_module.tf
+├── own_terra_network_module.tf
+├── terra.tf
+└── serviceroad/
+    ├── local.tf
+    ├── output.tf
+    ├── resources.tf
+    └── variable.tf
+
+```
+
+---
+
+## Root Configuration
+
+### `terra.tf`
+
+Configures the explicit Terraform settings, provider requirements, versions, and targeted AWS region definitions.
+
+```hcl
+terraform {
+  required_providers {
+    # Telling Terraform which providers to download and use
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+# Configuring the AWS region
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### `own_terra_network_module.tf`
+
+Calls the child module (`serviceroad`) and handles passing dynamic arguments for the VPC blocks and subnet layouts.
+
+```hcl
+module "highway_plus_vpc" {
+  source = "./serviceroad" # Pointing to the folder where our resource code lives
+
+  # Passing the VPC IP block and tags down to the module
+  highway_vpc_details = {
+    vpc_cidr_highway = "10.0.0.0/16"
+    tags = {
+      Name = "Highway_service_vpc"
+    }
+  }
+
+  # Defining the subnets I want created. The module will loop through these.
+  all_sub_details = {
+    subnet_1 = {
+      cidr_block_highway = "10.0.1.0/24"
+    }
+    subnet_2 = {
+      cidr_block_highway = "10.0.2.0/24"
+      public_test_key_word = true
+    }
+  }
+}
+
+```
+
+### `own_module.tf`
+
+Exposes the resulting properties out from the applied root layout to your terminal screen or state consumers.
+
+```hcl
+output "module_public_subnet_display_doll" {
+  value = module.highway_plus_vpc.public_subnet_display
+}
+
+output "module_private_subnet_display" {
+  value = module.highway_plus_vpc.private_subnet_display
+}
+
+output "module_vpc_id_details" {
+  value = module.highway_plus_vpc.own_vpc_id_details
+}
+
+```
+
+---
+
+## Module: `serviceroad`
+
+### `serviceroad/variable.tf`
+
+Declares explicit data contracts, object configurations, and data verification constraints for the execution environment.
+
+```hcl
+variable "all_sub_details" {
+  type = map(object({
+    cidr_block_highway = string
+    tags               = optional(map(string))
+    public_test_key_word        = optional(bool,false)
+  }))
+  validation{
+    condition=alltrue([for x in var.all_sub_details: can(cidrnetmask(x.cidr_block_highway))])
+    error_message = "Provided highway cidr is invalid."
+
+  }
+  
+}
+variable "highway_vpc_details" {
+  type = object({
+    vpc_cidr_highway = string
+    tags             = map(string)
+  })
+}
+
+```
+
+### `serviceroad/local.tf`
+
+Contains localized transformations to programmatically separate the networks into Public and Private groups depending on their specific Boolean tags.
+
+```hcl
+locals {
+  public_subnet_check = {
+    for x, y in var.all_sub_details : x => {
+      own_subnet_id = aws_subnet.own_service_subnet_details[x].id
+      own_availability_zone = aws_subnet.own_service_subnet_details[x].availability_zone
+    } if y.public_test_key_word
+  }
+}
+
+locals {
+  private_subnet_check = {
+    for q, w in var.all_sub_details : q => {
+      own_subnet_id = aws_subnet.own_service_subnet_details[q].id
+      own_availability_zone = aws_subnet.own_service_subnet_details[q].availability_zone
+    } if !w.public_test_key_word
+  }
+
+}
+
+```
+
+### `serviceroad/resources.tf`
+
+Deploys core instances inside your cloud tenancy, conditionally controlling the creation of Gateways and Routing assignments.
+
+```hcl
+resource "aws_vpc" "own_vpc" {
+  cidr_block = var.highway_vpc_details.vpc_cidr_highway
+  tags={
+    Name="own_highway_vpc"
+  }
+  
+}
+
+resource "aws_subnet" "own_service_subnet_details" {
+  for_each= var.all_sub_details
+  vpc_id = aws_vpc.own_vpc.id
+  cidr_block = each.value.cidr_block_highway
+  tags={
+    Name=each.key
+  }
+  
+}
+
+resource "aws_internet_gateway" "own_gw" {
+  vpc_id = aws_vpc.own_vpc.id
+  count= length(local.public_subnet_check) > 0 ? 1:0
+
+  tags = {
+    Name = "own_highway_igw"
+  }
+}
+
+resource "aws_route_table" "pub_rtb" {
+  vpc_id = aws_vpc.own_vpc.id
+
+  count= length(local.public_subnet_check) > 0 ? 1:0
+
+
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.own_gw[0].id ##############why zero think
+  }
+}
+
+resource "aws_route_table_association" "public_asso" {
+  for_each = local.public_subnet_check
+
+  subnet_id      = aws_subnet.own_service_subnet_details[each.key].id
+  route_table_id = aws_route_table.pub_rtb[0].id
+}
+
+```
+
+### `serviceroad/output.tf`
+
+Returns calculated maps and raw underlying resources back up to the parent layer invocation context.
+
+```hcl
+output "public_subnet_display" {
+  value = local.public_subnet_check
+}
+output "private_subnet_display" {
+  value = local.private_subnet_check
+}
+
+output "own_vpc_id_details"{
+  value=aws_vpc.own_vpc
+}
