@@ -1,0 +1,225 @@
+Extend the subnet_config module to accept an optional public_test_key_word flag for each subnet.
+Use locals to split subnets into public and private groups based on the flag.
+Deploy an Internet Gateway only if at least one subnet is marked public.
+Create a public route table only when public subnets exist.
+Add a default route (0.0.0.0/0) in the public route table pointing to the Internet Gateway.
+Associate all public subnets with the public route table.
+Output both public and private subnet maps for visibility (public_subnet_display, private_subnet_display).
+Ensure VPC details and subnet definitions are passed cleanly into the module without altering existing structure.
+Keep resource naming consistent (own_vpc, own_gw, pub_rtb, public_asso) for clarity.
+Validate CIDR blocks in variable.tf to prevent misconfiguration.
+Use conditional count logic (length(local.public_subnet_check) > 0 ? 1 : 0) to avoid deploying unnecessary resources.
+Maintain modularity by keeping all subnet logic inside serviceroad and exposing outputs in own_module.tf.
+Ensure tags are applied consistently across VPC, subnets, and gateway for easier identification.
+Document the purpose of each resource in comments for future maintainers.
+Keep provider versions pinned (aws >= 6.42.0, random 3.8.1) for stability.
+
+This repository contains a modular Terraform configuration designed to spin up a custom AWS Virtual Private Cloud (VPC) along with dynamic subnet provisioning, routing tables, and internet gateway attachments.
+
+## Project Structure
+
+```text
+.
+├── own_module.tf
+├── own_terra_network_module.tf
+├── serviceroad
+│   ├── local.tf
+│   ├── output.tf
+│   ├── resources.tf
+│   └── variable.tf
+└── terra.tf
+
+1 directory, 7 files
+
+```
+
+---
+
+## Root Configuration
+
+### `terra.tf`
+
+This file configures the basic Terraform environment requirements and details the cloud provider region.
+
+```hcl
+terraform {
+  required_providers {
+    # Telling Terraform which providers to download and use
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+# Configuring the AWS region
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### `own_terra_network_module.tf`
+
+This block calls our internal network module (`serviceroad`) and feeds it the explicit IP configurations and map structures for generating the network layout.
+
+```hcl
+module "highway_plus_vpc" {
+  source = "./serviceroad" # Pointing to the folder where our resource code lives
+
+  # Passing the VPC IP block and tags down to the module
+  highway_vpc_details = {
+    vpc_cidr_highway = "10.0.0.0/16"
+    tags = {
+      Name = "Highway_service_vpc"
+    }
+  }
+
+  # Defining the subnets I want created. The module will loop through these.
+  all_sub_details = {
+    subnet_1 = {
+      cidr_block_highway = "10.0.1.0/24"
+    }
+    subnet_2 = {
+      cidr_block_highway = "10.0.2.0/24"
+      #public_test_key_word = true #Enabling This key word to true would result into making  a subnet as public or private
+    }
+  }
+}
+
+```
+
+### `own_module.tf`
+
+Exposes outputs derived directly from the loaded `highway_plus_vpc` infrastructure module execution.
+
+```hcl
+output "module_public_subnet_display_doll" {
+  value = module.highway_plus_vpc.public_subnet_display
+}
+
+output "module_private_subnet_display" {
+  value = module.highway_plus_vpc.private_subnet_display
+}
+
+```
+
+---
+
+## Service Road Module (`/serviceroad`)
+
+### `variable.tf`
+
+Defines configuration schemas alongside rigorous network address validation patterns.
+
+```hcl
+variable "all_sub_details" {
+  type = map(object({
+    cidr_block_highway = string
+    tags               = optional(map(string))
+    public_test_key_word        = optional(bool,false)
+  }))
+  validation{
+    condition=alltrue([for x in var.all_sub_details: can(cidrnetmask(x.cidr_block_highway))])
+    error_message = "Provided highway cidr is invalid."
+
+  }
+  
+}
+variable "highway_vpc_details" {
+  type = object({
+    vpc_cidr_highway = string
+    tags             = map(string)
+  })
+}
+
+```
+
+### `local.tf`
+
+Handles calculations and structural parsing to distinguish between desired public and private resources based on flag configurations.
+
+```hcl
+locals {
+  public_subnet_check = {
+    for x, y in var.all_sub_details : x => y if y.public_test_key_word
+  }
+
+  private_subnet_check = {
+    for x, y in var.all_sub_details : x => y if !y.public_test_key_word
+  }
+}
+
+```
+
+### `resources.tf`
+
+The main provisioning configuration logic for setting up AWS infrastructure components.
+
+```hcl
+resource "aws_vpc" "own_vpc" {
+  cidr_block = var.highway_vpc_details.vpc_cidr_highway
+  tags={
+    Name="own_highway_vpc"
+  }
+  
+}
+
+resource "aws_subnet" "own_service_subnet_details" {
+  for_each= var.all_sub_details
+  vpc_id = aws_vpc.own_vpc.id
+  cidr_block = each.value.cidr_block_highway
+  tags={
+    Name=each.key
+  }
+  
+}
+
+resource "aws_internet_gateway" "own_gw" {
+  vpc_id = aws_vpc.own_vpc.id
+  count= length(local.public_subnet_check) > 0 ? 1:0
+
+  tags = {
+    Name = "own_highway_igw"
+  }
+}
+
+resource "aws_route_table" "pub_rtb" {
+  vpc_id = aws_vpc.own_vpc.id
+
+  count= length(local.public_subnet_check) > 0 ? 1:0
+
+
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.own_gw[0].id ##############why zero think
+  }
+}
+
+resource "aws_route_table_association" "public_asso" {
+  for_each = local.public_subnet_check
+
+  subnet_id      = aws_subnet.own_service_subnet_details[each.key].id
+  route_table_id = aws_route_table.pub_rtb[0].id
+}
+
+```
+
+### `output.tf`
+
+Passes evaluation arrays back out to the parent workspace level context.
+
+```hcl
+output "public_subnet_display" {
+  value = local.public_subnet_check
+}
+output "private_subnet_display" {
+  value = local.private_subnet_check
+}
