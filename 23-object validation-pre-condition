@@ -1,0 +1,163 @@
+Terraform EC2 Deployment with Custom Lifecycle Preconditions
+
+[x] Created a dedicated project directory to isolate this infrastructure setup.
+
+[x] Configured the AWS provider with a specific region (ap-south-1) and an alias for the India region.
+
+[x] Defined required provider versions for both aws and random plugins to lock in dependency versions.
+
+[x] Dynamically fetched the most recent Ubuntu 22.04 LTS HVM AMI from Canonical using data sources and filters.
+
+[x] Created an instance_type string variable with a default value of t100.micro to test rule violations.
+
+[x] Declared an allowed_instance_types local array containing the permitted instance sizes (t2.micro and t3.micro).
+
+[x] Added a lifecycle precondition to ensure the selected Ubuntu AMI utilizes the x86_64 architecture.
+
+[x] Added a lifecycle precondition using the contains() function to ensure the requested instance type resides within the allowed local list.
+
+[x] Provisioned an aws_instance resource configured with the dynamic AMI ID and custom naming tags.
+
+[x] Configured outputs to display full configuration metadata for both the EC2 instance and the fetched AMI resource.
+
+This project demonstrates how to deploy an Amazon EC2 instance using Terraform while enforcing strict security and validation checks. By using `precondition` blocks, we ensure that the infrastructure is only built if it meets our specified criteria (such as valid AMI architectures and allowed instance types) before AWS resources are ever provisioned.
+
+## Project Structure
+
+Here is how the files are organized in the workspace:
+
+```text
+.
+├── compute.tf
+├── data.tf
+├── local.tf
+├── out.tf
+├── terra.tf
+├── terraform.tfstate
+├── terraform.tfstate.backup
+└── var.tf
+
+```
+
+---
+
+## Configuration Files
+
+### 1. Provider Setup (`terra.tf`)
+
+This file configures the necessary Terraform providers. It explicitly locks the AWS and Random provider versions and creates a provider alias named `ubuntu_IND` specifically targeting the Mumbai region (`ap-south-1`).
+
+```hcl
+terraform {
+  required_providers {
+    # Telling Terraform which providers to download and use
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+# Configuring the AWS region
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### 2. Variables (`var.tf`)
+
+We define the instance type input here. For testing validation failures, the default is intentionally set to an invalid type (`t100.micro`).
+
+```hcl
+variable "instance_type" {
+  type = string
+  #default = "t2.micro"
+   default = "t100.micro"
+}
+
+```
+
+### 3. Local Values (`local.tf`)
+
+This file acts as our governance gatekeeper, holding an array of instance families we officially allow in our environment.
+
+```hcl
+locals {
+  allowed_instance_types=["t2.micro","t3.micro"]
+}
+
+```
+
+### 4. Data Sources (`data.tf`)
+
+This fetches the most up-to-date official Canonical Ubuntu 22.04 LTS HVM AMI from the India region provider.
+
+```hcl
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Use India provider alias
+
+  # Filter by AMI name pattern
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  # Ensure virtualization type is HVM
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+```
+
+### 5. Compute Resources (`compute.tf`)
+
+This is where the magic happens. The EC2 resource definition includes two custom `precondition` blocks within its `lifecycle` configuration to validate both the AMI architecture and the chosen instance type before deployment.
+
+```hcl
+resource "aws_instance" "my_ec2" {
+  count         = 1
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.instance_type
+  lifecycle {
+    precondition {
+      condition     = data.aws_ami.own_ami_ubuntu_IND.architecture == "x86_64"
+      #condition     = data.aws_ami.own_ami_ubuntu_IND.architecture == "abc"
+      error_message = "Mentioned AMI is from bad place as it is invalid"
+    }
+    precondition {
+      condition     = contains(local.allowed_instance_types,var.instance_type)
+      error_message = "Mentioned instances has virus so it is not allowed to launch"
+    }
+
+  }
+
+  tags = {
+    Name = "own_terra-serial-${count.index}"
+  }
+}
+
+```
+
+### 6. Outputs (`out.tf`)
+
+Exposes all configuration details for both the EC2 instance and the fetched AMI resource for quick debugging.
+
+```hcl
+output "ec2_full_details" {
+  value = aws_instance.my_ec2
+}
+
+output "AMI_full_details" {
+  value = data.aws_ami.own_ami_ubuntu_IND
+}
