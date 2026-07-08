@@ -1,0 +1,143 @@
+## Project Directory Structure
+
+```text
+.
+├── local.tf
+├── resource_instance.tf
+├── resource_subnet.tf
+├── terra.tf
+├── terraform.tfstate
+├── terraform.tfstate.backup
+└── variable.tf
+
+```
+
+---
+
+## Configuration Code
+
+### 1. `local.tf`
+
+```hcl
+# Defining allowed instance types for local validation boundaries
+locals {
+  allowed_instance_types = ["t2.micro", "t3.micro"]
+}
+
+```
+
+### 2. `variable.tf`
+
+```hcl
+# Default instance type targeted for the EC2 deployment
+variable "instance_type" {
+  type    = string
+  default = "t3.micro"
+  #default = "t3.microq"
+}
+
+# The target availability zone parameter for the subnet deployment
+variable "az_type" {
+  type    = string
+  #default = "ap-south-1b"
+  default = "ap-forest-1b"
+}
+
+```
+
+### 3. `terra.tf`
+
+```hcl
+terraform {
+  required_providers {
+    # Specifying provider requirements and constraints
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+# Regional AWS provider config initialized with an alias block
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### 4. `resource_instance.tf`
+
+```hcl
+resource "aws_instance" "my_instan" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.instance_type
+
+  lifecycle {
+    # Postcondition evaluates AFTER the instance finishes creation
+    postcondition {
+      condition     = contains(local.allowed_instance_types, self.instance_type)
+      error_message = "Mentioned instance is out of stock"
+    }
+  }
+  
+  tags = {
+    Name = "My_post_condition_instance"
+  }
+}
+
+# Dynamically fetching the latest official Ubuntu 22.04 LTS AMI mapping
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Mapping to explicit regional provider alias
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+```
+
+### 5. `resource_subnet.tf`
+
+```hcl
+# Reading configuration details of the default VPC in the region
+data "aws_vpc" "my-default-vpc" {
+  default = true
+}
+
+# Fetching the list of active/healthy Availability Zones in the region
+data "aws_availability_zones" "boy_available" {
+  state = "available"
+}
+
+resource "aws_subnet" "my-subnet" {
+  vpc_id            = data.aws_vpc.my-default-vpc.id
+  cidr_block        = "172.31.128.0/24"
+  availability_zone = var.az_type
+
+  lifecycle {
+    # Postcondition block to dynamically test configuration state post-apply
+    postcondition {
+      #condition     = self.availability_zone == "ap-south-1b"
+      condition     = contains(data.aws_availability_zones.boy_available.names, self.availability_zone)
+      error_message = "We can't launch subnet ${self.availability_zone} due to flood.Only ap-south-1b az is available"
+    }
+  }
+  
+  tags = {
+    Name = "My post condition subnet"
+  }
+}
