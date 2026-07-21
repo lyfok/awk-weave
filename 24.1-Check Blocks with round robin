@@ -1,0 +1,283 @@
+Create a check block named `tag_check_key` that generates a warning when the `aws_instance` resource is missing the `cost_centre` tag key.
+Create a check block named `tag_check_value**` that verifies if the `aws_instance` resource's `Name` tag is set to `"city_life"`.
+Add a commented-out `cost_centre` tag** in the `aws_instance` resource to test and observe how Terraform check warnings trigger during `terraform plan`.
+Configure a data source `aws_ami.own_ami_ubuntu_IND**` to dynamically look up the latest official Ubuntu 22.04 LTS AMI using owner ID `099720109477` and a regional provider alias `aws.ubuntu_IND`.
+Define an `aws_subnet` resource using `count = 2**` with dynamic CIDR block calculation (`172.31.${128+count.index}.0/24`) and hardcode the `availability_zone` to `"ap-south-1a"`.
+Add a `postcondition` lifecycle block inside the `aws_subnet` resource** to ensure the assigned Availability Zone exists within the active regional AZ list fetched by `data.aws_availability_zones.boy_available`.
+Create a check block named `checking_if_subnet_is_available_in_multi_azs**` that calculates distinct subnet Availability Zones and outputs a warning if all subnets are deployed to a single AZ.
+Configure local variable `allowed_instance_types**` containing `["t2.micro", "t3.micro"]` for future instance type validation.
+Set up provider constraints in `terra.tf**` for HashiCorp AWS (`>= 6.42.0`) and Random (`3.8.1`), creating an aliased AWS provider block for region `ap-south-1`.
+Migrate the aws_subnet resource to adopt a round-robin strategy to select the availability zone.
+
+
+
+A hands-on implementation of declarative continuous validation in Terraform using `check` blocks, `postcondition` lifecycle assertions, dynamic AMI lookups, and multi-resource configurations.
+
+This repository demonstrates how to enforce tagging policies and infrastructure architectural checks (like multi-AZ subnet distribution) without breaking standard `terraform plan` execution.
+
+---
+
+## 📌 Project Overview
+
+When managing cloud resources at scale, manual code reviews aren't always enough to ensure compliance or high availability. This project explores native Terraform validation mechanisms to:
+
+1. **Enforce governance rules** (e.g., verifying mandatory resource tags like `cost_centre` and specific `Name` conventions).
+2. **Audit architectural resilience** (e.g., flagging single-AZ subnet deployments as non-critical warnings).
+3. **Guard against invalid states** using post-apply lifecycle checks.
+
+---
+
+## 📂 Repository Structure
+
+```text
+.
+├── local.tf             # Local values for instance type restrictions
+├── resou_subn.tf        # VPC subnets & multi-AZ distribution assertion
+├── resource_inst.tf     # EC2 instance, Ubuntu AMI data source & tag checks
+├── terra.tf             # Terraform & AWS provider configuration (aliased)
+├── varia.tf             # Input variables for EC2 & Availability Zones
+├── terraform.tfstate    # Active state file
+└── terraform.tfstate.backup
+
+```
+
+---
+
+## 🛠 Key Implementation Details
+
+### 1. Mandatory Tag Compliance (`resource_inst.tf`)
+
+`check` blocks run continuous assertions after resource evaluation. Unlike strict variable validation, a failing `check` outputs a non-blocking warning—ideal for policy auditing.
+
+* **Key Check (`tag_check_key`):** Verifies if the `cost_centre` tag is assigned to the EC2 instance using the `can()` function.
+* **Value Check (`tag_check_value`):** Asserts that the instance's `Name` tag matches expected naming conventions.
+
+### 2. Multi-AZ Subnet Distribution Audit (`resou_subn.tf`)
+
+* **Subnet Provisioning:** Uses `count = 2` to deploy subnets with dynamically calculated CIDR blocks (`172.31.${128+count.index}.0/24`).
+* **Multi-AZ Check:** Calculates the distinct set of Availability Zones across created subnets. If both subnets resolve to a single AZ (e.g., `ap-south-1a`), Terraform raises a custom warning advising cross-AZ distribution for high availability.
+* **Lifecycle Postcondition:** Ensures the selected AZ exists within active regional zones using `data.aws_availability_zones`.
+
+---
+
+## 💻 Complete Code Base
+
+```hcl
+locals {
+  allowed_instance_types = ["t2.micro", "t3.micro"]
+}
+
+```
+
+```hcl
+data "aws_vpc" "my-default-vpc" {
+  default = true
+}
+
+# Fetching the list of active/healthy Availability Zones in the region
+data "aws_availability_zones" "boy_available" {
+  state = "available"
+}
+
+resource "aws_subnet" "my-subnet" {
+  vpc_id            = data.aws_vpc.my-default-vpc.id
+  count             = 2
+  # cidr_block        = "172.31.128.0/24"
+  cidr_block        = "172.31.${128+count.index}.0/24"
+  #availability_zone = var.az_type
+  #availability_zone = "ap-south-1b"
+  #availability_zone = "ap-south-1a"
+  # =========================================================================
+  # CHANGED: Round-Robin AZ Selection Formula
+  # Syntax: list[ count.index % total_items_in_list ]
+  # =========================================================================
+  
+  availability_zone =  data.aws_availability_zones.boy_available.names[count.index % length(data.aws_availability_zones.boy_available.names)]
+
+
+  lifecycle {
+    # Postcondition block to dynamically test configuration state post-apply
+    postcondition {
+      #condition     = self.availability_zone == "ap-south-1b"
+      #condition     = contains(data.aws_availability_zones.boy_available.names, self.availability_zone)
+      #condition      = self.availability_zone == "ap-south-1c"
+      condition     = contains(data.aws_availability_zones.boy_available.names, self.availability_zone)
+      error_message = "We can't launch subnet ${self.availability_zone} due to flood.Only ap-south-1c az is available"
+    }
+  }
+  
+  tags = {
+    Name = "My post condition subnet-${count.index}"
+  }
+}
+
+check "checking_if_subnet_is_available_in_multi_azs" {
+  assert {
+    condition=length(distinct([for q in aws_subnet.my-subnet : q.availability_zone])) > 1
+    error_message=<<-EOT
+      You are deploying all subnets within the same AZ.
+      Please consider distributing them across AZs for higher availability.Every thing is deployed
+      in ${aws_subnet.my-subnet[0].availability_zone}
+      EOT
+  }
+}
+
+```
+
+```hcl
+resource "aws_instance" "my_instan" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = var.instance_type
+  
+  tags = {
+    #Name        = "city_life"
+    Name        = "village_life"
+    #cost_centre = "marketing" # If you remove this line, the check below will catch it and show the error
+    #cost_centre = "World fund"
+  }
+}
+
+check "tag_check_value" {
+  assert {
+    condition     = aws_instance.my_instan.tags.Name == "city_life"
+    error_message = "Check tag section. Current tag is '${try(aws_instance.my_instan.tags.Name, "none")}'. Ideal should be city_life."
+  }
+}
+
+check "tag_check_key" {
+  assert {
+    # Returns true if the key exists; false (failing the check) if it is missing
+    #condition     = contains(keys(aws_instance.my_instan.tags), "cost_centre")
+    condition = can(aws_instance.my_instan.tags["cost_centre"])
+    error_message = "The required tag key 'cost_centre' is missing from this resource."
+  }
+}
+
+# Dynamically fetching the latest official Ubuntu 22.04 LTS AMI mapping
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Mapping to explicit regional provider alias
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+```
+
+```hcl
+terraform {
+  required_providers {
+    # Specifying provider requirements and constraints
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+# Regional AWS provider config initialized with an alias block
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+```hcl
+variable "instance_type" {
+  type    = string
+  default = "t3.micro"
+  #default = "t3.microq"
+}
+
+# The target availability zone parameter for the subnet deployment
+variable "az_type" {
+  type    = string
+  default = "ap-south-1b"
+  # default = "ap-forest-1b"
+}
+
+
+
+
+##################$$$$$$$$$$$$$$$$$$$#########################
+
+## 1. What Each Part Means
+
+# * **`data.aws_availability_zones.boy_available.names`**
+# This fetches the list of available AZ names in your current region from AWS.
+# * *Example in `ap-south-1` (Mumbai):* `["ap-south-1a", "ap-south-1b", "ap-south-1c"]`
+
+
+# * **`length(...)`**
+# Calculates the total count of items in that list.
+# * *For 3 AZs:* `length(...) = 3`
+
+
+# * **`count.index`**
+# The zero-based index generated by Terraform during the `count` loop.
+# * If `count = 5`, `count.index` runs as `0`, `1`, `2`, `3`, `4`.
+
+
+# * **`%` (Modulo Operator)**
+# Returns the **remainder** of integer division (`A % B`). This is the mathematical key to Round-Robin because any number modulo `3` can **only ever evaluate to `0`, `1`, or `2**`.
+
+# ---
+
+# ## 2. Step-by-Step Execution Trace
+
+# Let's assume your AWS region has **3 AZs** (`length = 3`) and you set **`count = 5`** to create 5 subnets:
+
+# $$\text{AZ List} = [\overbrace{\text{"ap-south-1a"}}^{\text{Index 0}}, \overbrace{\text{"ap-south-1b"}}^{\text{Index 1}}, \overbrace{\text{"ap-south-1c"}}^{\text{Index 2}}]$$
+
+# | Subnet Number | `count.index` | Modulo Math (`count.index % 3`) | Resulting Index | Final AZ Output | Action |
+# | --- | --- | --- | --- | --- | --- |
+# | **Subnet 0** | `0` | `0 % 3 = 0` | `[0]` | **`"ap-south-1a"`** | Pick AZ 0 |
+# | **Subnet 1** | `1` | `1 % 3 = 1` | `[1]` | **`"ap-south-1b"`** | Pick AZ 1 |
+# | **Subnet 2** | `2` | `2 % 3 = 2` | `[2]` | **`"ap-south-1c"`** | Pick AZ 2 |
+# | **Subnet 3** | `3` | `3 % 3 = 0` | `[0]` | **`"ap-south-1a"`** | 🔄 **Wraps around!** |
+# | **Subnet 4** | `4` | `4 % 3 = 1` | `[1]` | **`"ap-south-1b"`** | Continuous loop |
+
+# ---
+
+# ## 3. Dummy Output (Terraform Terminal View)
+
+# If you run `terraform plan` with `count = 5`, Terraform generates the following resources:
+
+# ```hcl
+# # aws_subnet.my-subnet[0] will be created
+# + availability_zone = "ap-south-1a"
+# + cidr_block        = "172.31.128.0/24"
+
+# # aws_subnet.my-subnet[1] will be created
+# + availability_zone = "ap-south-1b"
+# + cidr_block        = "172.31.129.0/24"
+
+# # aws_subnet.my-subnet[2] will be created
+# + availability_zone = "ap-south-1c"
+# + cidr_block        = "172.31.130.0/24"
+
+# # aws_subnet.my-subnet[3] will be created
+# + availability_zone = "ap-south-1a"   # <--- Looped back to first AZ
+# + cidr_block        = "172.31.131.0/24"
+
+# # aws_subnet.my-subnet[4] will be created
+# + availability_zone = "ap-south-1b"   # <--- Looped back to second AZ
+# + cidr_block        = "172.31.132.0/24"
+
+# ```
+
+# > **Why this matters:** Without the modulo operator (`%`), `count.index = 3` would try to fetch `names[3]`. Since the list only has 3 items (indexes 0, 1, 2), Terraform would throw an **"Index out of bounds"** error and crash. Modulo prevents that crash completely.
