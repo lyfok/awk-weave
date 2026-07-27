@@ -1,0 +1,321 @@
+
+
+# Terraform State Refactoring with `terraform state mv` and `moved` Block
+
+## Overview
+
+This repository contains my hands-on practice for understanding Terraform state refactoring.
+
+The goal was to learn how to rename or refactor Terraform resources **without recreating the actual AWS infrastructure**.
+
+During this exercise, I covered:
+
+* `terraform state mv`
+* Migrating from `count` to `for_each`
+* Using the `moved` block
+* Understanding how Terraform tracks resources in the state file
+
+---
+
+# Lab Objective (Adapted to My Implementation)
+
+Instead of following the lab exactly, I used my own resource names and configuration.
+
+The workflow I completed was:
+
+1. Configure the AWS provider.
+2. Create an EC2 instance resource.
+3. Convert the resource to use `count = 2`.
+4. Verify Terraform state after creating two EC2 instances.
+5. Convert the resource from `count` to `for_each`.
+6. Use a local variable to define instance identifiers (`car` and `villa`).
+7. Observe why Terraform planned to destroy the existing EC2 instances.
+8. Preserve the existing infrastructure using `terraform state mv`.
+9. Repeat the same migration using the `moved` block.
+10. Verify that only tags changed and no EC2 instance was recreated.
+11. Destroy the lab infrastructure.
+
+---
+
+# Provider Configuration
+
+```hcl
+terraform {
+  required_providers {
+
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+
+  }
+}
+
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+```
+
+---
+
+# EC2 Configuration
+
+I used the following resource throughout the exercise.
+
+```hcl
+locals {
+  instances_names = [
+    "car",
+    "villa"
+  ]
+}
+
+resource "aws_instance" "my_new_instan" {
+
+  for_each = toset(local.instances_names)
+
+  # count = 2
+
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = "t3.micro"
+
+  tags = {
+    Name = "village_life_${each.key}"
+
+    # Name = "village_life"
+  }
+
+}
+```
+
+---
+
+# AMI Data Source
+
+```hcl
+data "aws_ami" "own_ami_ubuntu_IND" {
+
+  most_recent = true
+
+  owners = ["099720109477"]
+
+  provider = aws.ubuntu_IND
+
+  filter {
+
+    name = "name"
+
+    values = [
+      "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
+    ]
+
+  }
+
+  filter {
+
+    name = "virtualization-type"
+
+    values = ["hvm"]
+
+  }
+
+}
+```
+
+---
+
+# Using the `moved` Block
+
+Instead of manually running `terraform state mv`, I also verified the migration using Terraform's native `moved` block.
+
+```hcl
+moved {
+  from = aws_instance.my_new_instan[0]
+  to   = aws_instance.my_new_instan["car"]
+}
+
+moved {
+  from = aws_instance.my_new_instan[1]
+  to   = aws_instance.my_new_instan["villa"]
+}
+```
+
+---
+
+# What Happened During Migration?
+
+Initially, my Terraform state contained:
+
+```
+aws_instance.my_new_instan[0]
+
+aws_instance.my_new_instan[1]
+```
+
+After converting the configuration to `for_each`, Terraform expected:
+
+```
+aws_instance.my_new_instan["car"]
+
+aws_instance.my_new_instan["villa"]
+```
+
+Terraform compares **resource addresses**, not AWS resource IDs.
+
+Because the addresses changed, Terraform initially planned:
+
+* Destroy both existing EC2 instances
+* Create two new EC2 instances
+
+This behavior is expected because Terraform assumed they were different resources. 
+
+---
+
+# My First Mistake
+
+Initially, I executed:
+
+```bash
+terraform state mv aws_instance.my_new_instan[0] aws_instance.my_new_instan["car"]
+```
+
+Terraform returned:
+
+```
+Error: Index value required
+```
+
+The issue was not with Terraform state.
+
+The shell interpreted the square brackets before Terraform received the command. 
+
+---
+
+# Correct Command
+
+Wrapping both addresses in single quotes solved the problem.
+
+```bash
+terraform state mv \
+'aws_instance.my_new_instan[0]' \
+'aws_instance.my_new_instan["car"]'
+```
+
+The first resource moved successfully. 
+
+---
+
+# Second Observation
+
+Out of curiosity, I executed the same command again.
+
+Terraform returned:
+
+```
+Cannot move...
+There is already a resource instance at that address.
+```
+
+and
+
+```
+The current state does not contain
+aws_instance.my_new_instan[0]
+```
+
+This confirmed that the first move had already updated the Terraform state. 
+
+---
+
+# Moving the Second Resource
+
+```bash
+terraform state mv \
+'aws_instance.my_new_instan[1]' \
+'aws_instance.my_new_instan["villa"]'
+```
+
+Terraform successfully moved the second resource. 
+
+---
+
+# Verification
+
+Running
+
+```bash
+terraform plan
+```
+
+returned:
+
+```
+No changes.
+```
+
+This confirmed that the infrastructure was unchanged and only the Terraform state had been updated. 
+
+---
+
+# Tag Update
+
+After the migration, I changed the tag from:
+
+```
+village_life
+```
+
+to
+
+```
+village_life_car
+
+village_life_villa
+```
+
+Terraform performed an **in-place update** instead of recreating the EC2 instances. 
+
+---
+
+# Commands Used
+
+```bash
+terraform fmt
+
+terraform plan
+
+terraform apply
+
+terraform state mv \
+'aws_instance.my_new_instan[0]' \
+'aws_instance.my_new_instan["car"]'
+
+terraform state mv \
+'aws_instance.my_new_instan[1]' \
+'aws_instance.my_new_instan["villa"]'
+
+terraform plan
+
+terraform apply --auto-approve
+
+terraform destroy --auto-approve
+```
+
+---
+
+# Key Learnings
+
+* Terraform identifies resources by their **resource address**, not by the AWS resource ID.
+* Migrating from `count` to `for_each` changes the resource address.
+* Without updating the state, Terraform plans to destroy and recreate existing resources.
+* `terraform state mv` updates only the Terraform state and leaves the infrastructure untouched.
+* When using `terraform state mv`, resource addresses containing square brackets should be enclosed in single quotes.
+* The `moved` block provides a declarative alternative to `terraform state mv`, allowing Terraform to update the state automatically during `plan` and `apply`.
+
+
