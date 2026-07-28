@@ -1,0 +1,406 @@
+* Spin up an EC2 instance (`ex1`) using an Ubuntu AMI data source via `terraform apply`.
+* Remove the EC2 instance from Terraform state management using the `terraform state rm` CLI command.
+* Comment out the original resource definition in `resou.tf` using the Linux `sed` command.
+* Re-import the active EC2 instance under a new resource name (`own_mport_ec2`) into `own_res.tf`.
+* Define a `removed` block with `destroy = false` in `own_remove.tf` to declaratively untrack the resource.
+* Resolve the "Removed resource still exists" validation error by commenting out the duplicate `resource` block in `own_res.tf`.
+* Apply the declarative `removed` block to safely discard the EC2 instance from state without destroying it in AWS.
+# Mastering State Decoupling: A Comparison of `terraform state rm` vs. `removed {}` Blocks
+
+When managing AWS infrastructure with Terraform, there are times you want to stop tracking a live resource in code without actually deleting it from AWS.
+
+In this lab, I created an EC2 instance, removed it from state management using the legacy CLI command (`terraform state rm`), re-imported it under a new name, and then safely detached it using the declarative `removed {}` block introduced in modern Terraform versions.
+
+---
+
+## Workspace Setup & File Inventory
+
+Before running my final apply, my working directory contained the following files:
+
+```text
+.
+├── own_remove.tf
+├── own_res.tf
+├── resou.tf
+├── terra.tf
+├── terraform.tfstate
+├── terraform.tfstate.1785227636.backup
+└── terraform.tfstate.backup
+
+0 directories, 7 files
+
+```
+
+---
+
+## Step 1: Provisioning the Initial EC2 Instance
+
+I defined an Ubuntu AMI data source and an EC2 instance (`aws_instance.ex1`) inside `resou.tf`:
+
+### `resou.tf`
+
+```hcl
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+resource "aws_instance" "ex1" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  instance_type = "t2.micro"
+
+  tags = {
+    Name = "own-tera-instance"
+  }
+}
+
+```
+
+I ran `terraform apply --auto-approve` to spin up the server on AWS:
+
+```text
+terraform apply --auto-approve
+data.aws_ami.own_ami_ubuntu_IND: Reading...
+data.aws_ami.own_ami_ubuntu_IND: Read complete after 0s [id=ami-0f22a0a2c92c70d7a]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # aws_instance.ex1 will be created
+  + resource "aws_instance" "ex1" {
+      + ami                                   = "ami-0f22a0a2c92c70d7a"
+      + arn                                   = (known after apply)
+      + associate_public_ip_address           = (known after apply)
+      + availability_zone                     = (known after apply)
+      + disable_api_stop                      = (known after apply)
+      + disable_api_termination               = (known after apply)
+      + ebs_optimized                         = (known after apply)
+      + enable_primary_ipv6                   = (known after apply)
+      + force_destroy                         = false
+      + get_password_data                     = false
+      + host_id                               = (known after apply)
+      + host_resource_group_arn               = (known after apply)
+      + iam_instance_profile                  = (known after apply)
+      + id                                    = (known after apply)
+      + instance_initiated_shutdown_behavior = (known after apply)
+      + instance_lifecycle                    = (known after apply)
+      + instance_state                        = (known after apply)
+      + instance_type                         = "t2.micro"
+      + ipv6_address_count                    = (known after apply)
+      + ipv6_addresses                        = (known after apply)
+      + key_name                              = (known after apply)
+      + monitoring                            = (known after apply)
+      + outpost_arn                           = (known after apply)
+      + password_data                         = (known after apply)
+      + placement_group                       = (known after apply)
+      + placement_group_id                    = (known after apply)
+      + placement_partition_number            = (known after apply)
+      + primary_network_interface_id          = (known after apply)
+      + private_dns                           = (known after apply)
+      + private_ip                            = (known after apply)
+      + public_dns                            = (known after apply)
+      + public_ip                             = (known after apply)
+      + region                                = "ap-south-1"
+      + secondary_private_ips                 = (known after apply)
+      + security_groups                       = (known after apply)
+      + source_dest_check                     = true
+      + spot_instance_request_id              = (known after apply)
+      + subnet_id                             = (known after apply)
+      + tags                                  = {
+          + "Name" = "own-tera-instance"
+        }
+      + tags_all                              = {
+          + "Name" = "own-tera-instance"
+        }
+      + tenancy                               = (known after apply)
+      + user_data_base64                      = (known after apply)
+      + user_data_replace_on_change           = false
+      + vpc_security_group_ids                = (known after apply)
+
+      + capacity_reservation_specification (known after apply)
+
+      + cpu_options (known after apply)
+
+      + ebs_block_device (known after apply)
+
+      + enclave_options (known after apply)
+
+      + ephemeral_block_device (known after apply)
+
+      + instance_market_options (known after apply)
+
+      + maintenance_options (known after apply)
+
+      + metadata_options (known after apply)
+
+      + network_interface (known after apply)
+
+      + primary_network_interface (known after apply)
+
+      + private_dns_name_options (known after apply)
+
+      + root_block_device (known after apply)
+
+      + secondary_network_interface (known after apply)
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+aws_instance.ex1: Creating...
+aws_instance.ex1: Still creating... [00m10s elapsed]
+aws_instance.ex1: Creation complete after 12s [id=i-08bbdf23efd37b520]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+```
+
+---
+
+## Step 2: Detaching via CLI (`terraform state rm`) and Commenting Code
+
+Next, I used `terraform state rm` to forget `aws_instance.ex1` without destroying the server in AWS:
+
+```bash
+terraform state rm   aws_instance.ex1
+
+```
+
+Output:
+
+```text
+Removed aws_instance.ex1
+Successfully removed 1 resource instance(s).
+
+```
+
+To align my code with my state file (so Terraform wouldn't try to recreate `ex1`), I commented out `resou.tf` using `sed`:
+
+```bash
+sed -i 's/^/#/' resou.tf
+
+```
+
+### Updated `resou.tf`
+
+```hcl
+#data "aws_ami" "own_ami_ubuntu_IND" {
+#  most_recent = true
+#  owners      = ["099720109477"] # Canonical's AWS account ID
+#
+#  filter {
+#    name   = "name"
+#    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+#  }
+#
+#  filter {
+#    name   = "virtualization-type"
+#    values = ["hvm"]
+#  }
+#}
+#
+#resource "aws_instance" "ex1" {
+#  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+#  instance_type = "t2.micro"
+#
+#  tags = {
+#    Name = "own-tera-instance"
+#  }
+#}
+
+```
+
+Running `terraform apply` confirmed that zero state changes were needed:
+
+```text
+No changes. Your infrastructure matches the configuration.
+
+Terraform has compared your real infrastructure against your configuration and found no differences, so no changes are needed.
+
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+
+```
+
+---
+
+## Step 3: Re-Importing the Running EC2 Instance under a New Name
+
+Now, the EC2 instance (`i-08bbdf23efd37b520`) was still running in AWS, but unmanaged by Terraform. I created `own_res.tf` to bring it back under state management with the resource name `own_mport_ec2`:
+
+### `own_res.tf`
+
+```hcl
+resource "aws_instance" "own_mport_ec2" {
+  ami = "ami-0f22a0a2c92c70d7a"
+  instance_type = "t2.micro"
+}
+
+```
+
+I ran the CLI import command:
+
+```bash
+terraform import aws_instance.own_mport_ec2    i-08bbdf23efd37b520
+
+```
+
+Output:
+
+```text
+aws_instance.own_mport_ec2: Importing from ID "i-08bbdf23efd37b520"...
+aws_instance.own_mport_ec2: Import prepared!
+  Prepared aws_instance for import
+aws_instance.own_mport_ec2: Refreshing state... [id=i-08bbdf23efd37b520]
+
+Import successful!
+
+The resources that were imported are shown above. These resources are now in
+your Terraform state and will henceforth be managed by Terraform.
+
+```
+
+---
+
+## Step 4: Testing the Modern `removed {}` Block
+
+To test declarative resource removal, I created `own_remove.tf` alongside `own_res.tf`:
+
+### `own_remove.tf`
+
+```hcl
+removed {
+  from = aws_instance.own_mport_ec2
+  lifecycle {
+    destroy = false
+  }
+} 
+
+```
+
+When I ran `terraform plan`, it failed with an error:
+
+```text
+╷
+│ Error: Removed resource still exists
+│ 
+│   on own_res.tf line 1:
+│    1: resource "aws_instance" "own_mport_ec2" {
+│ 
+│ This statement declares that aws_instance.own_mport_ec2 was removed, but it is still declared in configuration.
+╵
+
+```
+
+---
+
+## Challenges Encountered & Solutions
+
+### Challenge 1: `Removed resource still exists` Error
+
+* **Why it happened:** The `removed {}` block explicitly tells Terraform that a resource is no longer managed in code. However, `own_res.tf` still contained an active `resource "aws_instance" "own_mport_ec2"` definition. A resource cannot simultaneously exist in code and be declared as removed.
+* **How I overcame it:** I commented out the active resource block inside `own_res.tf` using `sed`:
+```bash
+sed -i 's/^/#/' own_res.tf
+
+```
+
+
+
+### Updated `own_res.tf`
+
+```hcl
+#resource "aws_instance" "own_mport_ec2" {
+#  ami = "ami-0f22a0a2c92c70d7a"
+#  instance_type = "t2.micro"
+#}
+
+```
+
+---
+
+## Step 5: Successful Execution & State Discard
+
+With `own_res.tf` commented out and `own_remove.tf` active, I ran `terraform plan`. Terraform cleanly recognized that the instance would be removed from tracking without destroying the live AWS resource:
+
+```text
+terraform  plan
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+
+Terraform will perform the following actions:
+
+ # aws_instance.own_mport_ec2 will no longer be managed by Terraform, but will not be destroyed
+ # (destroy = false is set in the configuration)
+ . resource "aws_instance" "own_mport_ec2" {
+        id                                   = "i-08bbdf23efd37b520"
+        tags                                 = {
+            "Name" = "own-tera-instance"
+        }
+        # (39 unchanged attributes hidden)
+
+        # (9 unchanged blocks hidden)
+    }
+
+Plan: 0 to add, 0 to change, 0 to destroy.
+╷
+│ Warning: Some objects will no longer be managed by Terraform
+│ 
+│ If you apply this plan, Terraform will discard its tracking information for the following objects, but it will not delete them:
+│  - aws_instance.own_mport_ec2
+│ 
+│ After applying this plan, Terraform will no longer manage these objects. You will need to import them into Terraform to manage them again.
+╵
+
+```
+
+Finally, I applied the execution plan:
+
+```text
+terraform  apply --auto-approve
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+
+Terraform will perform the following actions:
+
+ # aws_instance.own_mport_ec2 will no longer be managed by Terraform, but will not be destroyed
+ # (destroy = false is set in the configuration)
+ . resource "aws_instance" "own_mport_ec2" {
+        id                                   = "i-08bbdf23efd37b520"
+        tags                                 = {
+            "Name" = "own-tera-instance"
+        }
+        # (39 unchanged attributes hidden)
+
+        # (9 unchanged blocks hidden)
+    }
+
+Plan: 0 to add, 0 to change, 0 to destroy.
+╷
+│ Warning: Some objects will no longer be managed by Terraform
+│ 
+│ If you apply this plan, Terraform will discard its tracking information for the following objects, but it will not delete them:
+│  - aws_instance.own_mport_ec2
+│ 
+│ After applying this plan, Terraform will no longer manage these objects. You will need to import them into Terraform to manage them again.
+╵
+
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+
+```
+
+---
+
+## Summary Takeaway
+
+1. **`terraform state rm` (CLI method):** Immediately drops the resource from `terraform.tfstate`. It requires you to manually remove or comment out the resource block in code afterward so Terraform doesn't try to recreate it during the next plan.
+2. **`removed {}` block (Code method):** A safer, code-driven approach. It allows your entire team to review state removals in code before running an apply. You must remove or comment out the matching `resource` block, or Terraform will throw a validation error.
