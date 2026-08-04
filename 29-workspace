@@ -1,0 +1,146 @@
+A practical setup showing how to manage isolated environments using **Terraform Workspaces** while keeping your infrastructure code clean and reusable.
+
+Instead of writing separate configuration files for different environments, this project uses workspaces (`urban` and `village`) to dynamic select instance types and tag resources accordingly.
+
+---
+
+## What This Project Does
+
+* **Environment Isolation:** Uses workspaces to keep state files separated (`urban` vs `village`).
+* **Dynamic Sizing:** Maps specific AWS instance types depending on the active workspace using Terraform locals and the `lookup()` function.
+* **AMI Fetching:** Automatically searches for the latest Ubuntu 22.04 LTS AMI in the `ap-south-1` (Mumbai) region.
+
+---
+
+## Directory Structure
+
+Here is how the project tree looks after creating workspaces and applying configurations:
+
+```text
+.
+├── ec2-resou.tf
+├── terra.tf
+├── terraform.tfstate
+├── terraform.tfstate.backup
+└── terraform.tfstate.d
+    ├── urban
+    │   ├── terraform.tfstate
+    │   └── terraform.tfstate.backup
+    └── village
+        ├── terraform.tfstate
+        └── terraform.tfstate.backup
+
+```
+
+---
+
+## Project Configuration
+
+### 1. `terra.tf` (Provider Setup)
+
+```hcl
+terraform {
+  required_providers {
+    # Specifying provider requirements and constraints
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.42.0"
+    }
+
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+}
+
+# Regional AWS provider config initialized with an alias block
+provider "aws" {
+  region = "ap-south-1"
+  alias  = "ubuntu_IND"
+}
+
+```
+
+### 2. `ec2-resou.tf` (EC2 Resource Definition)
+
+```hcl
+data "aws_ami" "own_ami_ubuntu_IND" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical official owner ID
+  provider    = aws.ubuntu_IND   # Mapping to explicit regional provider alias
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+locals {
+  different_instance_type={
+    urban   = "t3.micro"
+    village = "t2.small"
+  }
+}
+
+resource "aws_instance" "my_instan" {
+  ami           = data.aws_ami.own_ami_ubuntu_IND.id
+  #instance_type = "t2.micro"
+  #instance_type  = terraform.workspace == "urban" ? "t3.medium" : "t2.micro"
+  instance_type = lookup(local.different_instance_type, terraform.workspace, "t2.micro")
+
+  tags = {
+    Name = "ec2_life_${terraform.workspace}"
+  }
+}
+
+```
+
+---
+
+## How Environment Sizing Works
+
+| Workspace | Instance Type | Tag Name |
+| --- | --- | --- |
+| **`urban`** | `t3.micro` | `ec2_life_urban` |
+| **`village`** | `t2.small` | `ec2_life_village` |
+| **`default` / other** | `t2.micro` *(fallback)* | `ec2_life_default` |
+
+---
+
+## Quick Commands Reference
+
+Here are the one-liner commands to run this project:
+
+```bash
+# Initialize Terraform provider plugins
+terraform init
+
+# List all existing workspaces
+terraform workspace list
+
+# Create and switch to the 'urban' workspace
+terraform workspace new urban
+
+# Create and switch to the 'village' workspace
+terraform workspace new village
+
+# Switch back to an existing workspace
+terraform workspace select urban
+
+# Check which workspace is currently active
+terraform workspace show
+
+# Preview resources that will be created in the active workspace
+terraform plan
+
+# Deploy infrastructure in the active workspace
+terraform apply -auto-approve
+
+# Destroy resources in the current workspace only
+terraform destroy -auto-approve
