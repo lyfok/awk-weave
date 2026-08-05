@@ -220,21 +220,3 @@ With `-out`:
 * Always control state carefully
 * Use `plan -out` in real environments
 * Never assume bucket region
-
----
-
-## 🚀 What I can improve next
-
-* Add DynamoDB for state locking
-* Enable versioning on S3 bucket
-* Separate environments (dev/prod)
-* Integrate with CI/CD pipeline
-
----
-
-## 📌 Final thought
-
-This exercise helped me understand that Terraform is not just about writing `.tf` files —
-it's more about **state management, consistency, and safe deployments**.
-
----
