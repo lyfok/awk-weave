@@ -1,13 +1,5 @@
 # Working with the Terraform CLI
 
-## Introduction
-
-Welcome to this exercise on the Terraform Command Line Interface (CLI)! 
-
-## Step-by-Step Guide
-
-
-
 -   `terraform validate`: Checks the syntax of the Terraform files and verifies that they are internally consistent, but does not ensure that the resources exist or that the providers are properly configured.
 -   `terraform fmt`: Automatically updates Terraform configuration files to a canonical format and style, improving consistency and readability. The command works only for the files in the current working directory, but you can also add a `-recursive` flag to format `.tf` files in nested directories.
 -   `terraform plan`: Creates an execution plan, showing what actions Terraform will take to achieve the desired state defined in the Terraform files. This command does not modify the actual resources or state.
